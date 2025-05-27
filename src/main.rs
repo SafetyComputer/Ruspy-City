@@ -4,9 +4,6 @@ use std::ops::Add;
 use std::time;
 
 use rand::Rng;
-use std::collections::HashSet;
-use std::hash::{Hash, Hasher};
-use std::time::Instant;
 
 #[derive(Copy, Clone)]
 enum Cell {
@@ -59,7 +56,7 @@ impl Board<bool> {
     }
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
+#[derive(Copy, Clone, PartialEq)]
 enum Direction {
     Up,
     Down,
@@ -84,6 +81,18 @@ impl Direction {
             Direction::Left,
             Direction::Right,
         ]
+    }
+}
+
+// implement debug for Direction
+impl fmt::Debug for Direction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Direction::Up => write!(f, "U"),
+            Direction::Down => write!(f, "D"),
+            Direction::Left => write!(f, "L"),
+            Direction::Right => write!(f, "R"),
+        }
     }
 }
 
@@ -215,6 +224,7 @@ impl Game {
         let mut reachable = Board::new(self.width, self.height, false);
         let mut queue = Vec::new();
         queue.push((start, 0));
+        reachable.set(start, true);
 
         // determine the "other" player so we don't move over them
         let other_player = if start == self.blue_position {
@@ -366,7 +376,6 @@ impl Game {
             scored.sort_by(|a, b| a.1.cmp(&b.1)); // low to high for Green
         }
         scored.into_iter().map(|(mv, _)| mv).collect()
-        
     }
 
     fn make_move(&mut self, mv: Move, safe: bool) -> bool {
@@ -483,7 +492,7 @@ impl Game {
     fn minimax_best_move(&self, depth: i32) -> Move {
         // before timing and scoring, order first‐level moves by a fast heuristic to improve alpha‐beta pruning
 
-        let start = Instant::now();
+        let start = time::Instant::now();
         let mut nodes_evaluated = 0u64;
         let is_max = self.blue_turn;
 
@@ -497,11 +506,15 @@ impl Game {
             nodes: &mut u64,
         ) -> i32 {
             *nodes += 1;
-            if depth == 0 || game.game_over() {
+            if depth == 0 {
                 return game.evaluate();
             }
             let mut value = if game.blue_turn { i32::MIN } else { i32::MAX };
-            for mv in game.evaluation_sorted_moves() {
+            let _moves = match depth {
+                1 => game.possible_moves(),
+                _ => game.evaluation_sorted_moves(),
+            };
+            for mv in _moves {
                 game.make_move(mv, false);
                 let score = minimax_internal(game, depth - 1, alpha, beta, nodes);
                 game.undo_move();
@@ -554,6 +567,19 @@ impl Game {
 
         // return the best move
         scored_moves[0].0
+    }
+
+    fn deepening_minimax(&self, depth: i32) -> Move {
+        // iterative deepening minimax
+        let start = time::Instant::now();
+        let best_move = self.minimax_best_move(depth);
+
+        if start.elapsed().as_secs() < 1 {
+            let best_move = self.minimax_best_move(depth + 2);
+            return best_move;
+        }
+
+        best_move
     }
 
     fn game_over(&self) -> bool {
@@ -666,7 +692,7 @@ impl Game {
             } else {
                 // AI move
                 println!("AI thinking...");
-                let mv = game.minimax_best_move(depth);
+                let mv = game.deepening_minimax(depth);
                 println!("AI plays {:?}", mv);
                 // safe = false since minimax guarantees a legal move
                 game.make_move(mv, false);
@@ -787,5 +813,5 @@ impl Game {
 }
 
 fn main() {
-    Game::play_against_minimax(7, 7, 4, true);
+    Game::play_against_minimax(7, 7, 5, true);
 }
