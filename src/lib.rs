@@ -1,13 +1,12 @@
 use pyo3::prelude::*;
 use std::cmp::PartialEq;
-use std::ops::Add;
 use std::fmt;
+use std::ops::Add;
 use std::time;
 
 use rand::Rng;
 
-
-#[pyclass]
+#[pyclass(name = "Move")]
 struct PyMove {
     #[pyo3(get)]
     destination: (i32, i32),
@@ -19,11 +18,14 @@ struct PyMove {
 impl PyMove {
     #[new]
     fn new(destination: (i32, i32), place_wall: String) -> Self {
-        PyMove { destination, place_wall }
+        PyMove {
+            destination,
+            place_wall,
+        }
     }
 }
 
-#[pyclass]
+#[pyclass(name = "Game")]
 struct PyGame {
     inner: Game,
 }
@@ -32,12 +34,14 @@ struct PyGame {
 impl PyGame {
     #[new]
     fn new(width: i32, height: i32) -> Self {
-        PyGame { inner: Game::new(width, height) }
+        PyGame {
+            inner: Game::new(width, height),
+        }
     }
 
     /// Start an interactive game loop (blocks).
     #[staticmethod]
-    fn play(width: i32, height: i32)  {
+    fn play(width: i32, height: i32) {
         Game::play(width, height);
     }
 
@@ -99,6 +103,11 @@ impl PyGame {
     #[staticmethod]
     fn benchmark(games: i32) {
         Game::benchmark(games)
+    }
+
+    #[staticmethod]
+    fn play_against_minimax(width: i32, height: i32, depth: i32, human_first: bool) {
+        Game::play_against_minimax(width, height, depth, human_first);
     }
 }
 
@@ -249,10 +258,15 @@ impl Move {
     }
 
     fn from_notation(notation: &str) -> Result<Move, &'static str> {
-        let destination = Coordinate::new(
-            notation.chars().nth(0).unwrap() as i32 - 'a' as i32,
-            7 - notation.chars().nth(1).unwrap() as i32 + '0' as i32,
-        );
+        let x: i32 = match notation.chars().nth(0) {
+            Some(x) => x as i32 - 'a' as i32,
+            _ => return Err("Invalid x"),
+        };
+        let y: i32 = match notation.chars().nth(1) {
+            Some(y) => y as i32 + '0' as i32,
+            _ => return Err("Invalid y"),
+        };
+        let destination = Coordinate::new(x, y);
         let place_wall = match notation.chars().nth(2).unwrap() {
             'U' => Direction::Up,
             'D' => Direction::Down,
@@ -305,7 +319,6 @@ struct Game {
 
     history: Vec<Move>, // history of moves
 }
-
 
 impl Game {
     fn new(width: i32, height: i32) -> Game {
@@ -917,7 +930,6 @@ impl Game {
         println!("Average time per move: {:?}", time.elapsed() / moves);
     }
 }
-
 
 #[cfg(test)]
 mod tests {
