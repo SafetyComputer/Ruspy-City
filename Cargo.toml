@@ -8,8 +8,9 @@ edition = "2021"
 name = "ruspy_city"
 crate-type = ["cdylib"]
 
-[main]
-name = "ruspy_city"
+
+[profile.test]
+opt-level = 3
 
 
 [dependencies]
