@@ -258,15 +258,15 @@ impl Move {
     }
 
     fn from_notation(notation: &str) -> Result<Move, &'static str> {
-        let x: i32 = match notation.chars().nth(0) {
-            Some(x) => x as i32 - 'a' as i32,
-            _ => return Err("Invalid x"),
-        };
-        let y: i32 = match notation.chars().nth(1) {
-            Some(y) => y as i32 + '0' as i32,
-            _ => return Err("Invalid y"),
-        };
-        let destination = Coordinate::new(x, y);
+        if notation == "exit" {
+            panic!("exit")
+        }
+        let x = notation.chars().nth(0).ok_or("Invalid x")?;
+        let y = notation.chars().nth(1).ok_or("Invalid y")?;
+        let destination = Coordinate::new(
+            x as i32 - 'a' as i32,
+            y as i32 + '0' as i32
+            );
         let place_wall = match notation.chars().nth(2).unwrap() {
             'U' => Direction::Up,
             'D' => Direction::Down,
