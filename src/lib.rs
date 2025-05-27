@@ -91,6 +91,10 @@ impl PyGame {
         (w, (score.blue, score.green))
     }
 
+    fn print(&self) {
+        self.inner.print();
+    }
+
     /// Run a benchmark of `games` random games.
     #[staticmethod]
     fn benchmark(games: i32) {

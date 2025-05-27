@@ -8,6 +8,9 @@ edition = "2021"
 name = "ruspy_city"
 crate-type = ["cdylib"]
 
+[main]
+name = "ruspy_city"
+
 [dependencies]
 pyo3 = { version = "0.24.0", features = ["extension-module"]  }
 rand = "0.9.1"
