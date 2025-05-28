@@ -263,10 +263,7 @@ impl Move {
         }
         let x = notation.chars().nth(0).ok_or("Invalid x")?;
         let y = notation.chars().nth(1).ok_or("Invalid y")?;
-        let destination = Coordinate::new(
-            x as i32 - 'a' as i32,
-            y as i32 + '0' as i32
-            );
+        let destination = Coordinate::new(x as i32 - 'a' as i32, y as i32 - '1' as i32);
         let place_wall = match notation.chars().nth(2).unwrap() {
             'U' => Direction::Up,
             'D' => Direction::Down,
@@ -285,7 +282,7 @@ impl fmt::Debug for Move {
             f,
             "{}{}{:?}",
             (b'a' + self.destination.x as u8) as char,
-            7 - self.destination.y,
+            (b'1' + self.destination.x as u8) as char,
             self.place_wall
         )
     }
@@ -841,7 +838,7 @@ impl Game {
         println!("┐");
 
         for y in 0..self.width {
-            print!("{} │ ", self.height - y);
+            print!("{} │ ", y + 1);
 
             for x in 0..self.height {
                 let cell_coordinate = Coordinate::new(x, y);
@@ -934,6 +931,29 @@ impl Game {
 #[cfg(test)]
 mod tests {
     use crate::Game;
+    use std::time::Instant;
+    
+    #[test]
+    fn benchmark() {
+        // evaluate(): 178172/s (5.61s for 1M calls)
+        // game_over(): 546218/s (1.83s for 1M calls)
+        // possible_moves(): 1074137/s (0.931s for 1M calls)
+
+
+        let game = Game::new(7, 7);
+        let n: i32 = 1000000;
+        let start = Instant::now();
+        for _ in 0..n {
+            game.possible_moves();
+        }
+        let elapsed = start.elapsed();
+        println!(
+            "Benchmarking {} calls took {:?} ({:2} calls per second)",
+            n,
+            elapsed,
+            n as f64 / elapsed.as_secs_f64()
+        );
+    }
 
     #[test]
     fn play() {
