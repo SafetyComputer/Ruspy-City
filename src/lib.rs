@@ -265,7 +265,7 @@ impl Move {
         let y = notation.chars().nth(1).ok_or("Invalid y")?;
         let destination = Coordinate::new(
             x as i32 - 'a' as i32,
-            y as i32 + '0' as i32
+            7 - y as i32 + '0' as i32
             );
         let place_wall = match notation.chars().nth(2).unwrap() {
             'U' => Direction::Up,
