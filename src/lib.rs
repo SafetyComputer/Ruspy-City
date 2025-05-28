@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
 use std::cmp::PartialEq;
+use std::collections::VecDeque;
 use std::fmt;
 use std::ops::Add;
 use std::time;
@@ -177,6 +178,13 @@ enum Direction {
     Right,
 }
 
+const DIRECION_VALUES: [Direction; 4] = [
+            Direction::Up,
+            Direction::Down,
+            Direction::Left,
+            Direction::Right,
+        ];
+
 impl Direction {
     fn relative_position(self) -> Coordinate {
         match self {
@@ -185,15 +193,6 @@ impl Direction {
             Direction::Left => Coordinate::new(-1, 0),
             Direction::Right => Coordinate::new(1, 0),
         }
-    }
-
-    fn values() -> Vec<Direction> {
-        vec![
-            Direction::Up,
-            Direction::Down,
-            Direction::Left,
-            Direction::Right,
-        ]
     }
 }
 
@@ -305,7 +304,7 @@ enum Winner {
 }
 
 #[derive(Clone)]
-struct Game {
+pub struct Game {
     width: i32,
     height: i32,
 
@@ -341,8 +340,8 @@ impl Game {
         ignore_other_player: bool,
     ) -> Board<bool> {
         let mut reachable = Board::new(self.width, self.height, false);
-        let mut queue = Vec::new();
-        queue.push((start, 0));
+        let mut queue = VecDeque::new();
+        queue.push_back((start, 0));
         reachable.set(start, true);
 
         // determine the "other" player so we don't move over them
@@ -353,12 +352,12 @@ impl Game {
         };
 
         while !queue.is_empty() {
-            let (current, current_step) = queue.remove(0);
+            let (current, current_step) = queue.pop_front().unwrap();
             if current_step == step {
                 continue;
             }
 
-            for direction in Direction::values() {
+            for direction in DIRECION_VALUES {
                 let next = current.move_to(direction);
                 if !next.inside(self.width, self.height) {
                     continue;
@@ -378,7 +377,7 @@ impl Game {
                     || (direction == Direction::Up && self.horizontal_walls.get(next).is_empty())
                 {
                     reachable.set(next, true);
-                    queue.push((next, current_step + 1));
+                    queue.push_back((next, current_step + 1));
                 }
             }
         }
@@ -402,7 +401,7 @@ impl Game {
 
         while !queue.is_empty() {
             let (current, d) = queue.remove(0);
-            for dir in Direction::values() {
+            for dir in DIRECION_VALUES {
                 let next = current.move_to(dir);
                 if !next.inside(self.width, self.height) {
                     continue;
@@ -452,7 +451,7 @@ impl Game {
                 }
 
                 let current = Coordinate::new(x, y);
-                for direction in Direction::values() {
+                for direction in DIRECION_VALUES {
                     let next = current.move_to(direction);
                     if !next.inside(self.width, self.height) {
                         continue;
@@ -900,7 +899,7 @@ impl Game {
         println!();
     }
 
-    fn benchmark(games: i32) {
+    pub fn benchmark(games: i32) {
         let mut moves = 0;
         let time = time::Instant::now();
 
@@ -934,6 +933,11 @@ impl Game {
 #[cfg(test)]
 mod tests {
     use crate::Game;
+
+    #[test]
+    fn bench() {
+        Game::benchmark(10000);
+    }
 
     #[test]
     fn play() {
