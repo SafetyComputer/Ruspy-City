@@ -179,11 +179,11 @@ enum Direction {
 }
 
 const DIRECION_VALUES: [Direction; 4] = [
-            Direction::Up,
-            Direction::Down,
-            Direction::Left,
-            Direction::Right,
-        ];
+    Direction::Up,
+    Direction::Down,
+    Direction::Left,
+    Direction::Right,
+];
 
 impl Direction {
     fn relative_position(self) -> Coordinate {
@@ -281,7 +281,7 @@ impl fmt::Debug for Move {
             f,
             "{}{}{:?}",
             (b'a' + self.destination.x as u8) as char,
-            (b'1' + self.destination.x as u8) as char,
+            (b'1' + self.destination.y as u8) as char,
             self.place_wall
         )
     }
@@ -621,14 +621,12 @@ impl Game {
             nodes: &mut u64,
         ) -> i32 {
             *nodes += 1;
-            if depth == 0 {
-                return game.evaluate();
-            }
-            let mut value = if game.blue_turn { i32::MIN } else { i32::MAX };
             let _moves = match depth {
+                0 => return game.evaluate(),
                 1 => game.possible_moves(),
                 _ => game.evaluation_sorted_moves(),
             };
+            let mut value = if game.blue_turn { i32::MIN } else { i32::MAX };
             for mv in _moves {
                 game.make_move(mv, false);
                 let score = minimax_internal(game, depth - 1, alpha, beta, nodes);
@@ -665,7 +663,7 @@ impl Game {
             })
             .collect();
 
-        // sort and print top 5
+        // sort and print top 5 for diagnostics
         if is_max {
             scored_moves.sort_by(|a, b| b.1.cmp(&a.1));
         } else {
@@ -675,13 +673,19 @@ impl Game {
         for (mv, sc) in scored_moves.iter().take(5) {
             println!("  {:?}: {}", mv, sc);
         }
-
-        // print stats
         println!("Total nodes evaluated: {}", nodes_evaluated);
         println!("Time elapsed: {:?}", start.elapsed());
 
-        // return the best move
-        scored_moves[0].0
+        // pick randomly among all best‐scoring moves
+        let best_score = scored_moves[0].1;
+        let best_moves: Vec<Move> = scored_moves
+            .iter()
+            .filter(|&(_, sc)| *sc == best_score)
+            .map(|&(mv, _)| mv)
+            .collect();
+        let mut rng = rand::rng();
+        let best_move = best_moves[rng.random_range(0..best_moves.len())];
+        best_move
     }
 
     fn deepening_minimax(&self, depth: i32) -> Move {
@@ -823,6 +827,31 @@ impl Game {
         }
     }
 
+    fn minimax_self_play(width: i32, height: i32, depth: i32) {
+        // play a game against itself using minimax
+        let mut game = Game::new(width, height);
+        loop {
+            game.print();
+            println!(
+                "Now it's {}'s turn",
+                if game.blue_turn { "Blue" } else { "Green" }
+            );
+
+            let mv = game.minimax_best_move(depth);
+            println!("AI plays {:?}", mv);
+            // safe = false since minimax guarantees a legal move
+            game.make_move(mv, false);
+
+            if game.game_over() {
+                game.print();
+                let (winner, score) = game.game_result();
+                println!("Game over, {:?} wins!", winner);
+                println!("Score: {} - {}", score.blue, score.green);
+                break;
+            }
+        }
+    }
+
     fn print(&self) {
         // print the cells and walls
         // use table characters
@@ -931,36 +960,36 @@ impl Game {
 mod tests {
     use crate::Game;
     use std::time::Instant;
-    
-    #[test]
-    fn benchmark() {
-        // evaluate(): 178172/s (5.61s for 1M calls)
-        // game_over(): 546218/s (1.83s for 1M calls)
-        // possible_moves(): 1074137/s (0.931s for 1M calls)
 
+    // #[test]
+    // fn benchmark() {
+    //     // evaluate(): 178172/s (5.61s for 1M calls)
+    //     // game_over(): 546218/s (1.83s for 1M calls)
+    //     // possible_moves(): 1074137/s (0.931s for 1M calls)
 
-        let game = Game::new(7, 7);
-        let n: i32 = 1000000;
-        let start = Instant::now();
-        for _ in 0..n {
-            game.possible_moves();
-        }
-        let elapsed = start.elapsed();
-        println!(
-            "Benchmarking {} calls took {:?} ({:2} calls per second)",
-            n,
-            elapsed,
-            n as f64 / elapsed.as_secs_f64()
-        );
-    }
+    //     let game = Game::new(7, 7);
+    //     let n: i32 = 1000000;
+    //     let start = Instant::now();
+    //     for _ in 0..n {
+    //         game.possible_moves();
+    //     }
+    //     let elapsed = start.elapsed();
+    //     println!(
+    //         "Benchmarking {} calls took {:?} ({:2} calls per second)",
+    //         n,
+    //         elapsed,
+    //         n as f64 / elapsed.as_secs_f64()
+    //     );
+    // }
 
-    #[test]
-    fn bench() {
-        Game::benchmark(10000);
-    }
+    // #[test]
+    // fn bench() {
+    //     Game::benchmark(10000);
+    // }
 
     #[test]
     fn play() {
-        Game::play_against_minimax(7, 7, 5, true);
+        // Game::play_against_minimax(7, 7, 5, true);
+        Game::minimax_self_play(7, 7, 5);
     }
 }
