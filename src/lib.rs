@@ -156,7 +156,9 @@ impl<T: Copy> Board<T> {
     }
 
     fn get(&self, coordinate: Coordinate) -> &T {
-        &self.board_matrix[coordinate.y as usize][coordinate.x as usize]
+        unsafe {
+            self.board_matrix.get_unchecked(coordinate.y as usize).get_unchecked(coordinate.x as usize)
+        }
     }
 
     fn set(&mut self, coordinate: Coordinate, value: T) {
@@ -475,7 +477,7 @@ impl Game {
     fn evaluation_sorted_moves(&self) -> Vec<Move> {
         // sort the possible moves by their evaluation
         let moves = self.possible_moves();
-        let mut evaluations: Vec<i32> = Vec::new();
+        let mut evaluations: Vec<i32> = Vec::with_capacity(moves.len());
         let mut game_clone = self.clone();
 
         for mv in &moves {
