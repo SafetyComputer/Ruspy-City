@@ -386,7 +386,7 @@ impl Game {
 
     fn steps_to_reach(&self, start: Coordinate) -> Board<i32> {
         let mut dist = Board::new(self.width, self.height, -1);
-        let mut queue = Vec::new();
+        let mut queue = VecDeque::new();
 
         // determine the "other" player so we don't move over them
         let other_player = if start == self.blue_position {
@@ -396,10 +396,10 @@ impl Game {
         };
 
         dist.set(start, 0);
-        queue.push((start, 0));
+        queue.push_back((start, 0));
 
         while !queue.is_empty() {
-            let (current, d) = queue.remove(0);
+            let (current, d) = queue.pop_front().unwrap();
             for dir in DIRECION_VALUES {
                 let next = current.move_to(dir);
                 if !next.inside(self.width, self.height) {
@@ -422,7 +422,7 @@ impl Game {
                 };
                 if can_move {
                     dist.set(next, d + 1);
-                    queue.push((next, d + 1));
+                    queue.push_back((next, d + 1));
                 }
             }
         }
@@ -829,7 +829,7 @@ impl Game {
         }
     }
 
-    fn minimax_self_play(width: i32, height: i32, depth: i32) {
+    pub fn minimax_self_play(width: i32, height: i32, depth: i32) {
         // play a game against itself using minimax
         let mut game = Game::new(width, height);
         loop {
