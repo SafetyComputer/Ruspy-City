@@ -156,7 +156,9 @@ impl<T: Copy> Board<T> {
     }
 
     fn get(&self, coordinate: Coordinate) -> &T {
-        &self.board_matrix[coordinate.y as usize][coordinate.x as usize]
+        unsafe {
+            self.board_matrix.get_unchecked(coordinate.y as usize).get_unchecked(coordinate.x as usize)
+        }
     }
 
     fn set(&mut self, coordinate: Coordinate, value: T) {
@@ -399,7 +401,7 @@ impl Game {
         queue.push_back((start, 0));
 
         while !queue.is_empty() {
-            let (current, d) = queue.pop_front().unwrap();
+            let (current, d) = queue.remove(0);
             for dir in DIRECION_VALUES {
                 let next = current.move_to(dir);
                 if !next.inside(self.width, self.height) {
@@ -481,7 +483,7 @@ impl Game {
         // if cutoff is 0, return all moves
 
         let moves = self.possible_moves();
-        let mut evaluations: Vec<i32> = Vec::new();
+        let mut evaluations: Vec<i32> = Vec::with_capacity(moves.len());
         let mut game_clone = self.clone();
 
         for mv in &moves {
@@ -906,7 +908,7 @@ impl Game {
         }
     }
 
-    fn minimax_self_play(width: i32, height: i32) {
+    fn minimax_self_play(width: i32, height: i32, depth: i32) {
         // play a game against itself using minimax
         let mut game = Game::new(width, height);
         loop {
