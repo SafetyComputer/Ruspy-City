@@ -107,8 +107,8 @@ impl PyGame {
     }
 
     #[staticmethod]
-    fn play_against_minimax(width: i32, height: i32, depth: i32, human_first: bool) {
-        Game::play_against_minimax(width, height, depth, human_first);
+    fn play_against_minimax(width: i32, height: i32, human_first: bool) {
+        Game::play_against_minimax(width, height, human_first);
     }
 }
 
@@ -291,13 +291,52 @@ impl fmt::Debug for Move {
     }
 }
 
+struct EvaluatedMove {
+    mv: Move,
+    ev: i32,
+}
+
+impl EvaluatedMove {
+    fn new(mv: Move, ev: i32) -> EvaluatedMove {
+        EvaluatedMove { mv, ev }
+    }
+}
+
+impl fmt::Debug for EvaluatedMove {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let sign = if self.ev > 0 { "+" } else { "" };
+        write!(f, "{:?} ({}{})", self.mv, sign, self.ev)
+    }
+}
+
+impl PartialEq for EvaluatedMove {
+    // compare only by evaluation value
+    fn eq(&self, other: &Self) -> bool {
+        self.ev == other.ev
+    }
+}
+
+impl Eq for EvaluatedMove {}
+
+impl PartialOrd for EvaluatedMove {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.ev.cmp(&other.ev))
+    }
+}
+
+impl Ord for EvaluatedMove {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.ev.cmp(&other.ev)
+    }
+}
+
 #[derive(Debug)]
 struct Score {
     blue: i32,
     green: i32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 enum Winner {
     Blue,
     Green,
@@ -478,36 +517,28 @@ impl Game {
         moves
     }
 
-    fn evaluation_sorted_moves(&self, cutoff: i32) -> Vec<Move> {
-        // sort the possible moves by their evaluation
-        // if blue_turn, sort by high to low, else sort by low to high
-        // cutoff is the maximum number of moves retuned
-        // if cutoff is 0, return all moves
+    fn evaluation_sorted_moves(&mut self, cutoff: i32) -> Vec<Move> {
+        // evaluate all possible moves and return them sorted by evaluation value
+        let mut scored_moves: Vec<EvaluatedMove> = self
+            .possible_moves()
+            .into_iter()
+            .map(|mv| {
+                let score = self.evaluate_move(mv);
+                EvaluatedMove::new(mv, score)
+            })
+            .collect();
 
-        let moves = self.possible_moves();
-        let mut evaluations: Vec<i32> = Vec::with_capacity(moves.len());
-        let mut game_clone = self.clone();
-
-        for mv in &moves {
-            game_clone.make_move(*mv, false);
-            evaluations.push(game_clone.evaluate());
-            game_clone.undo_move();
-        }
-
-        let mut scored: Vec<(Move, i32)> = moves.into_iter().zip(evaluations).collect();
+        // sort moves by evaluation value
+        scored_moves.sort();
         if self.blue_turn {
-            scored.sort_by(|a, b| b.1.cmp(&a.1)); // high to low for Blue
-        } else {
-            scored.sort_by(|a, b| a.1.cmp(&b.1)); // low to high for Green
+            scored_moves.reverse(); // descending for max player
         }
-        // apply cutoff: keep only the top‐scoring `cutoff` moves (if cutoff > 0)
-        if cutoff > 0 {
-            let k = cutoff as usize;
-            if scored.len() > k {
-                scored.truncate(k);
-            }
+
+        if cutoff > 0 && scored_moves.len() > cutoff as usize {
+            scored_moves.truncate(cutoff as usize);
         }
-        scored.into_iter().map(|(mv, _)| mv).collect()
+
+        scored_moves.into_iter().map(|em| em.mv).collect()
     }
 
     fn make_move(&mut self, mv: Move, safe: bool) -> bool {
@@ -550,6 +581,7 @@ impl Game {
 
     fn undo_move(&mut self) {
         let last_move = self.history.pop().expect("No moves to undo");
+
         let last_position = match self.history.len() {
             0 => Coordinate { x: 0, y: 0 }, // if no moves left, reset to start
             1 => Coordinate {
@@ -557,7 +589,7 @@ impl Game {
                 y: self.height - 1,
             }, // if only one move left, reset to green position
             _ => {
-                let second_last_move = self.history[self.history.len() - 1];
+                let second_last_move = self.history[self.history.len() - 2];
                 second_last_move.destination
             }
         };
@@ -578,9 +610,9 @@ impl Game {
 
         // reset the position
         if self.blue_turn {
-            self.blue_position = last_position;
-        } else {
             self.green_position = last_position;
+        } else {
+            self.blue_position = last_position;
         }
 
         self.blue_turn = !self.blue_turn;
@@ -685,103 +717,203 @@ impl Game {
         value
     }
 
-    fn minimax_best_move(&self, depth: i32, cutoff: i32) -> Move {
-        // before timing and scoring, order first‐level moves by a fast heuristic to improve alpha‐beta pruning
-
-        let start = time::Instant::now();
-        let mut nodes_evaluated = 0u64;
-        let is_max = self.blue_turn;
-
-        let mut game_clone = self.clone();
-        // internal minimax with alpha‐beta and node counting
-        fn minimax_internal(
-            game: &mut Game,
-            depth: i32,
-            mut alpha: i32,
-            mut beta: i32,
-            nodes: &mut u64,
-            cutoff: i32,
-        ) -> i32 {
-            *nodes += 1;
-            let _moves = match depth {
-                0 => return game.evaluate(),
-                1 => game.possible_moves(),
-                _ => game.evaluation_sorted_moves(cutoff),
-            };
-            let mut value = if game.blue_turn { i32::MIN } else { i32::MAX };
-            for mv in _moves {
-                game.make_move(mv, false);
-                let score = minimax_internal(game, depth - 1, alpha, beta, nodes, cutoff);
-                game.undo_move();
-                if game.blue_turn {
-                    value = value.max(score);
-                    alpha = alpha.max(value);
-                } else {
-                    value = value.min(score);
-                    beta = beta.min(value);
-                }
-                if alpha >= beta {
-                    break;
-                }
+    fn minimax_evaluate(
+        &mut self,
+        depth: i32,
+        mut alpha: i32,
+        mut beta: i32,
+        nodes: &mut u64,
+        cutoff: i32,
+    ) -> i32 {
+        *nodes += 1;
+        let moves = match depth {
+            0 => return self.evaluate(),
+            1 => self.possible_moves(),
+            _ => self.evaluation_sorted_moves(cutoff),
+        };
+        let mut value = if self.blue_turn { i32::MIN } else { i32::MAX };
+        for mv in moves {
+            self.make_move(mv, false);
+            let score = self.minimax_evaluate(depth - 1, alpha, beta, nodes, cutoff);
+            self.undo_move();
+            if self.blue_turn {
+                value = value.max(score);
+                alpha = alpha.max(value);
+            } else {
+                value = value.min(score);
+                beta = beta.min(value);
             }
-            value
+            if alpha >= beta {
+                break;
+            }
         }
+        value
+    }
 
-        // evaluate each first‐level move
-        let mut scored_moves: Vec<(Move, i32)> = self
+    fn minimax_best_move(&mut self, depth: i32, cutoff: i32) -> Move {
+        let mut node_evaluated = 0u64;
+        let start = time::Instant::now();
+        let evaluated_moves = self.minimax_evaluate_moves(depth, &mut node_evaluated);
+        // diagnostics
+        println!("Top 5 moves:");
+        for em in evaluated_moves.iter().take(5) {
+            println!("  {:?}", em);
+        }
+        println!("Total nodes evaluated: {}", node_evaluated);
+        println!("Time elapsed: {:?}", start.elapsed());
+
+        // pick randomly among best‐scoring
+        let best_score = evaluated_moves[0].ev;
+        let best_moves: Vec<Move> = evaluated_moves
+            .iter()
+            .filter(|em| em.ev == best_score)
+            .map(|em| em.mv)
+            .collect();
+        let mut rng = rand::rng();
+        best_moves[rng.random_range(0..best_moves.len())]
+    }
+
+    fn minimax_evaluate_moves(&mut self, depth: i32, nodes: &mut u64) -> Vec<EvaluatedMove> {
+        // evaluate all first‐level moves and return them sorted
+        let mut scored: Vec<EvaluatedMove> = self
             .evaluation_sorted_moves(0)
             .into_iter()
             .map(|mv| {
-                game_clone.make_move(mv, false);
-                let score = minimax_internal(
-                    &mut game_clone,
-                    depth - 1,
-                    i32::MIN,
-                    i32::MAX,
-                    &mut nodes_evaluated,
-                    cutoff,
-                );
-                game_clone.undo_move();
-                (mv, score)
+                self.make_move(mv, false);
+                let sc = self.minimax_evaluate(depth - 1, i32::MIN, i32::MAX, nodes, 0);
+                self.undo_move();
+                EvaluatedMove::new(mv, sc)
             })
             .collect();
 
-        // sort and print top 5 for diagnostics
-        if is_max {
-            scored_moves.sort_by(|a, b| b.1.cmp(&a.1));
-        } else {
-            scored_moves.sort_by(|a, b| a.1.cmp(&b.1));
-        }
-        println!("Top 5 moves:");
-        for (mv, sc) in scored_moves.iter().take(5) {
-            println!("  {:?}: {}", mv, sc);
-        }
-        println!("Total nodes evaluated: {}", nodes_evaluated);
-        println!("Time elapsed: {:?}", start.elapsed());
+        scored.sort();
 
-        // pick randomly among all best‐scoring moves
-        let best_score = scored_moves[0].1;
-        let best_moves: Vec<Move> = scored_moves
-            .iter()
-            .filter(|&(_, sc)| *sc == best_score)
-            .map(|&(mv, _)| mv)
-            .collect();
-        let mut rng = rand::rng();
-        let best_move = best_moves[rng.random_range(0..best_moves.len())];
+        if self.blue_turn {
+            scored.reverse(); // descending for max player
+        }
+
+        scored
+    }
+
+    fn iterative_deepening_minimax(&mut self, depth: i32) -> Move {
+        // iterative deepening minimax with aspiration windows
+        let start = time::Instant::now();
+        let max_depth = match self.history.len().cmp(&6) {
+            std::cmp::Ordering::Less => depth + 2, // if less than 6 moves, use 6
+            _ => depth + 4,                        // otherwise, use history length + 2
+        }; // Maximum depth to search
+        let time_limit_secs = 3; // Time limit in seconds
+
+        // Initial search at the base depth to get a starting value
+        let evaluated_moves = self.minimax_evaluate_moves(depth, &mut 0u64);
+        let mut best_move = evaluated_moves[0].mv;
+        let mut best_score = evaluated_moves[0].ev;
+        let mut current_depth = depth + 2;
+
+        // Window size parameters
+        let mut window_size = 1; // Initial window size
+
+        // Main iterative deepening loop
+        while current_depth <= max_depth && start.elapsed().as_secs() < time_limit_secs {
+            println!(
+                "Searching at depth {} with window around {}",
+                current_depth, best_score
+            );
+
+            // Set aspiration window bounds
+            let mut alpha = best_score - window_size;
+            let mut beta = best_score + window_size;
+            let mut retry = true;
+
+            // Try search with current window, expand if needed
+            while retry {
+                retry = false;
+                let mut nodes_evaluated = 0u64;
+
+                // Score each first-level move with the current window
+                let mut scored: Vec<EvaluatedMove> = self
+                    .evaluation_sorted_moves(0)
+                    .into_iter()
+                    .map(|mv| {
+                        self.make_move(mv, false);
+                        let sc = self.minimax_evaluate(
+                            current_depth - 1,
+                            alpha,
+                            beta,
+                            &mut nodes_evaluated,
+                            0,
+                        );
+                        self.undo_move();
+                        EvaluatedMove::new(mv, sc)
+                    })
+                    .collect();
+
+                // If score is outside window bounds, retry with wider window
+                if !scored.is_empty() {
+                    scored.sort();
+                    if self.blue_turn {
+                        scored.reverse();
+                    }
+
+                    let new_score = scored[0].ev;
+
+                    // Check if result was outside the window
+                    if new_score <= alpha {
+                        // Failed low, retry with wider window
+                        println!("Failed low: {} <= {}, widening window", new_score, alpha);
+                        window_size *= 2;
+                        alpha = new_score - window_size;
+                        retry = true;
+                        continue;
+                    } else if new_score >= beta {
+                        // Failed high, retry with wider window
+                        println!("Failed high: {} >= {}, widening window", new_score, beta);
+                        window_size *= 2;
+                        beta = new_score + window_size;
+                        retry = true;
+                        continue;
+                    } else {
+                        // Search succeeded within window
+                        best_score = new_score;
+
+                        // Pick randomly among best-scoring moves
+                        let best_moves: Vec<Move> = scored
+                            .iter()
+                            .filter(|em| em.ev == new_score)
+                            .map(|em| em.mv)
+                            .collect();
+
+                        let mut rng = rand::rng();
+                        best_move = best_moves[rng.random_range(0..best_moves.len())];
+
+                        // Diagnostics
+                        println!("Top 5 moves:");
+                        for em in scored.iter().take(5) {
+                            println!("  {:?}", em);
+                        }
+                        println!("Nodes evaluated: {}", nodes_evaluated);
+                        println!("Elapsed time: {:?}", start.elapsed());
+                    }
+                }
+            }
+
+            // Reset window size for next iteration
+            window_size = 1;
+
+            // Increase depth for next iteration
+            current_depth += 2;
+        }
+
+        println!("Final best move: {:?} with score {}", best_move, best_score);
         best_move
     }
 
-    fn deepening_minimax(&self, depth: i32, cutoff: i32) -> Move {
-        // iterative deepening minimax
-        let start = time::Instant::now();
-        let best_move = self.minimax_best_move(depth, cutoff);
-
-        if start.elapsed().as_secs() < 1 {
-            let best_move = self.minimax_best_move(depth + 2, cutoff);
-            return best_move;
-        }
-
-        best_move
+    // Helper function to evaluate a specific move
+    fn evaluate_move(&mut self, mv: Move) -> i32 {
+        self.make_move(mv, false);
+        let score = self.evaluate();
+        self.undo_move();
+        score
     }
 
     fn game_over(&self) -> bool {
@@ -838,6 +970,16 @@ impl Game {
                 let mut input = String::new();
                 std::io::stdin().read_line(&mut input).unwrap();
 
+                if input.trim() == "exit" || input.trim() == "quit" {
+                    println!("Exiting the game.");
+                    return;
+                }
+
+                if input.trim() == "undo" {
+                    game.undo_move();
+                    break;
+                }
+
                 let mv = Move::from_notation(input.trim());
                 if mv.is_err() {
                     println!("Invalid move format, try again.");
@@ -862,7 +1004,7 @@ impl Game {
         }
     }
 
-    fn play_against_minimax(width: i32, height: i32, depth: i32, human_first: bool) {
+    fn play_against_minimax(width: i32, height: i32, human_first: bool) {
         let mut game = Game::new(width, height);
 
         loop {
@@ -894,7 +1036,7 @@ impl Game {
             } else {
                 // AI move
                 println!("AI thinking...");
-                let mv = game.deepening_minimax(depth, 0);
+                let mv = game.iterative_deepening_minimax(2);
                 println!("AI plays {:?}", mv);
                 // safe = false since minimax guarantees a legal move
                 game.make_move(mv, false);
@@ -910,7 +1052,7 @@ impl Game {
         }
     }
 
-    fn minimax_self_play(width: i32, height: i32) {
+    fn minimax_self_play(width: i32, height: i32) -> Winner {
         // play a game against itself using minimax
         let mut game = Game::new(width, height);
         loop {
@@ -921,7 +1063,7 @@ impl Game {
             );
 
             let mv = match game.blue_turn {
-                true => game.minimax_best_move(7, 7),
+                true => game.iterative_deepening_minimax(2),
                 false => game.minimax_best_move(5, 0),
             };
             println!("AI plays {:?}", mv);
@@ -933,7 +1075,7 @@ impl Game {
                 let (winner, score) = game.game_result();
                 println!("Game over, {:?} wins!", winner);
                 println!("Score: {} - {}", score.blue, score.green);
-                break;
+                return winner;
             }
         }
     }
@@ -1046,6 +1188,7 @@ impl Game {
 mod tests {
     use crate::Game;
     use crate::Move;
+    use crate::Winner;
     use std::time::Instant;
 
     // #[test]
@@ -1076,7 +1219,21 @@ mod tests {
 
     #[test]
     fn play() {
-        // Game::play_against_minimax(7, 7, 7, true);
-        Game::minimax_self_play(7, 7);
+        // Game::play_against_minimax(7, 7, true);
+        // Game::play(7, 7);
+
+        let mut result: Vec<Winner> = Vec::new();
+        for i in 0..10 {
+            println!("Game {}", i + 1);
+            let winner = Game::minimax_self_play(7, 7);
+            result.push(winner);
+            println!("RESULT");
+            print!(
+                "{}-{}-{}",
+                result.iter().filter(|&&w| w == Winner::Blue).count(),
+                result.iter().filter(|&&w| w == Winner::Draw).count(),
+                result.iter().filter(|&&w| w == Winner::Green).count()
+            );
+        }
     }
 }
