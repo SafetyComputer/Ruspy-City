@@ -157,7 +157,9 @@ impl<T: Copy> Board<T> {
 
     fn get(&self, coordinate: Coordinate) -> &T {
         unsafe {
-            self.board_matrix.get_unchecked(coordinate.y as usize).get_unchecked(coordinate.x as usize)
+            self.board_matrix
+                .get_unchecked(coordinate.y as usize)
+                .get_unchecked(coordinate.x as usize)
         }
     }
 
@@ -388,7 +390,7 @@ impl Game {
 
     fn steps_to_reach(&self, start: Coordinate) -> Board<i32> {
         let mut dist = Board::new(self.width, self.height, -1);
-        let mut queue = VecDeque::new();
+        let mut queue: VecDeque<(Coordinate, i32)> = VecDeque::new();
 
         // determine the "other" player so we don't move over them
         let other_player = if start == self.blue_position {
@@ -401,7 +403,7 @@ impl Game {
         queue.push_back((start, 0));
 
         while !queue.is_empty() {
-            let (current, d) = queue.remove(0);
+            let (current, d) = queue.remove(0).unwrap();
             for dir in DIRECION_VALUES {
                 let next = current.move_to(dir);
                 if !next.inside(self.width, self.height) {
@@ -908,7 +910,7 @@ impl Game {
         }
     }
 
-    fn minimax_self_play(width: i32, height: i32, depth: i32) {
+    fn minimax_self_play(width: i32, height: i32) {
         // play a game against itself using minimax
         let mut game = Game::new(width, height);
         loop {
