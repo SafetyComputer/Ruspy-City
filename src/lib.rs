@@ -1,6 +1,6 @@
 use pyo3::prelude::*;
 use std::cmp::PartialEq;
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::fmt;
 use std::ops::Add;
 use std::time;
@@ -260,15 +260,15 @@ impl Move {
         if notation == "exit" {
             panic!("exit")
         }
-        let x = notation.chars().nth(0).ok_or("Invalid x")?;
-        let y = notation.chars().nth(1).ok_or("Invalid y")?;
+        let x = notation.chars().nth(0).ok_or("Invalid Notation")?;
+        let y = notation.chars().nth(1).ok_or("Invalid Notation")?;
         let destination = Coordinate::new(x as i32 - 'a' as i32, y as i32 - '1' as i32);
-        let place_wall = match notation.chars().nth(2).unwrap() {
+        let place_wall = match notation.chars().nth(2).ok_or("Invalid Notation")? {
             'U' => Direction::Up,
             'D' => Direction::Down,
             'L' => Direction::Left,
             'R' => Direction::Right,
-            _ => return Err("Invalid wall direction"),
+            _ => return Err("Invalid Notation"),
         };
 
         Ok(Move::new(destination, place_wall))
@@ -313,7 +313,8 @@ pub struct Game {
 
     blue_turn: bool, // true for blue, false for green
 
-    history: Vec<Move>, // history of moves
+    history: Vec<Move>,                    // history of moves
+    evaluation_cache: BTreeMap<u128, i32>, // cache for evaluation
 }
 
 impl Game {
@@ -327,6 +328,7 @@ impl Game {
             vertical_walls: Board::new(width - 1, height, Cell::Empty),
             blue_turn: true,
             history: Vec::new(),
+            evaluation_cache: BTreeMap::new(),
         }
     }
 
@@ -384,7 +386,7 @@ impl Game {
 
     fn steps_to_reach(&self, start: Coordinate) -> Board<i32> {
         let mut dist = Board::new(self.width, self.height, -1);
-        let mut queue = Vec::new();
+        let mut queue = VecDeque::new();
 
         // determine the "other" player so we don't move over them
         let other_player = if start == self.blue_position {
@@ -394,10 +396,10 @@ impl Game {
         };
 
         dist.set(start, 0);
-        queue.push((start, 0));
+        queue.push_back((start, 0));
 
         while !queue.is_empty() {
-            let (current, d) = queue.remove(0);
+            let (current, d) = queue.pop_front().unwrap();
             for dir in DIRECION_VALUES {
                 let next = current.move_to(dir);
                 if !next.inside(self.width, self.height) {
@@ -420,7 +422,7 @@ impl Game {
                 };
                 if can_move {
                     dist.set(next, d + 1);
-                    queue.push((next, d + 1));
+                    queue.push_back((next, d + 1));
                 }
             }
         }
@@ -472,8 +474,12 @@ impl Game {
         moves
     }
 
-    fn evaluation_sorted_moves(&self) -> Vec<Move> {
+    fn evaluation_sorted_moves(&self, cutoff: i32) -> Vec<Move> {
         // sort the possible moves by their evaluation
+        // if blue_turn, sort by high to low, else sort by low to high
+        // cutoff is the maximum number of moves retuned
+        // if cutoff is 0, return all moves
+
         let moves = self.possible_moves();
         let mut evaluations: Vec<i32> = Vec::new();
         let mut game_clone = self.clone();
@@ -489,6 +495,13 @@ impl Game {
             scored.sort_by(|a, b| b.1.cmp(&a.1)); // high to low for Blue
         } else {
             scored.sort_by(|a, b| a.1.cmp(&b.1)); // low to high for Green
+        }
+        // apply cutoff: keep only the top‐scoring `cutoff` moves (if cutoff > 0)
+        if cutoff > 0 {
+            let k = cutoff as usize;
+            if scored.len() > k {
+                scored.truncate(k);
+            }
         }
         scored.into_iter().map(|(mv, _)| mv).collect()
     }
@@ -532,20 +545,41 @@ impl Game {
     }
 
     fn undo_move(&mut self) {
-        // pop the last move; if there wasn't one, do nothing
-        if self.history.pop().is_some() {
-            // clone remaining history
-            let previous = self.history.clone();
-            // rebuild the game from scratch
-            let w = self.width;
-            let h = self.height;
-            *self = Game::new(w, h);
-            // replay all but the last move
-            for mv in previous {
-                // safe = false since these moves were already validated
-                self.make_move(mv, false);
+        let last_move = self.history.pop().expect("No moves to undo");
+        let last_position = match self.history.len() {
+            0 => Coordinate { x: 0, y: 0 }, // if no moves left, reset to start
+            1 => Coordinate {
+                x: self.width - 1,
+                y: self.height - 1,
+            }, // if only one move left, reset to green position
+            _ => {
+                let second_last_move = self.history[self.history.len() - 1];
+                second_last_move.destination
             }
+        };
+
+        // remove the wall
+        match last_move.place_wall {
+            Direction::Up => self
+                .horizontal_walls
+                .set(last_move.destination.move_to(Direction::Up), Cell::Empty),
+            Direction::Down => self
+                .horizontal_walls
+                .set(last_move.destination, Cell::Empty),
+            Direction::Left => self
+                .vertical_walls
+                .set(last_move.destination.move_to(Direction::Left), Cell::Empty),
+            Direction::Right => self.vertical_walls.set(last_move.destination, Cell::Empty),
         }
+
+        // reset the position
+        if self.blue_turn {
+            self.blue_position = last_position;
+        } else {
+            self.green_position = last_position;
+        }
+
+        self.blue_turn = !self.blue_turn;
     }
 
     fn territory_difference(&self) -> i32 {
@@ -604,7 +638,50 @@ impl Game {
         territory_diff
     }
 
-    fn minimax_best_move(&self, depth: i32) -> Move {
+    fn evaluate_with_cache(&mut self) -> (i32, bool) {
+        // if cached
+        let current_position = self.convert_current_position();
+        match self.evaluation_cache.get(&current_position) {
+            Some(&score) => return (score, true), // return cached score and true for cache hit
+            None => {
+                // evaluate and cache the result
+                let score = self.evaluate();
+                self.evaluation_cache.insert(current_position, score);
+                return (score, false); // return score and false for cache miss
+            }
+        }
+    }
+
+    fn convert_current_position(&self) -> u128 {
+        // convert the current position to a unique u128 value
+        let mut value: u128 = 0;
+        value |= (self.blue_position.x as u128) << 112;
+        value |= (self.blue_position.y as u128) << 104;
+        value |= (self.green_position.x as u128) << 96;
+        value |= (self.green_position.y as u128) << 88;
+
+        for x in 0..self.width {
+            for y in 0..self.height - 1 {
+                let cell = self.horizontal_walls.get(Coordinate::new(x, y));
+                if !cell.is_empty() {
+                    value |= (1u128 << (x + y * self.width)) << 42;
+                }
+            }
+        }
+
+        for x in 0..self.width - 1 {
+            for y in 0..self.height {
+                let cell = self.vertical_walls.get(Coordinate::new(x, y));
+                if !cell.is_empty() {
+                    value |= (1u128 << (x + y * self.width)) << 0;
+                }
+            }
+        }
+
+        value
+    }
+
+    fn minimax_best_move(&self, depth: i32, cutoff: i32) -> Move {
         // before timing and scoring, order first‐level moves by a fast heuristic to improve alpha‐beta pruning
 
         let start = time::Instant::now();
@@ -619,17 +696,18 @@ impl Game {
             mut alpha: i32,
             mut beta: i32,
             nodes: &mut u64,
+            cutoff: i32,
         ) -> i32 {
             *nodes += 1;
             let _moves = match depth {
                 0 => return game.evaluate(),
                 1 => game.possible_moves(),
-                _ => game.evaluation_sorted_moves(),
+                _ => game.evaluation_sorted_moves(cutoff),
             };
             let mut value = if game.blue_turn { i32::MIN } else { i32::MAX };
             for mv in _moves {
                 game.make_move(mv, false);
-                let score = minimax_internal(game, depth - 1, alpha, beta, nodes);
+                let score = minimax_internal(game, depth - 1, alpha, beta, nodes, cutoff);
                 game.undo_move();
                 if game.blue_turn {
                     value = value.max(score);
@@ -647,7 +725,7 @@ impl Game {
 
         // evaluate each first‐level move
         let mut scored_moves: Vec<(Move, i32)> = self
-            .evaluation_sorted_moves()
+            .evaluation_sorted_moves(0)
             .into_iter()
             .map(|mv| {
                 game_clone.make_move(mv, false);
@@ -657,6 +735,7 @@ impl Game {
                     i32::MIN,
                     i32::MAX,
                     &mut nodes_evaluated,
+                    cutoff,
                 );
                 game_clone.undo_move();
                 (mv, score)
@@ -688,13 +767,13 @@ impl Game {
         best_move
     }
 
-    fn deepening_minimax(&self, depth: i32) -> Move {
+    fn deepening_minimax(&self, depth: i32, cutoff: i32) -> Move {
         // iterative deepening minimax
         let start = time::Instant::now();
-        let best_move = self.minimax_best_move(depth);
+        let best_move = self.minimax_best_move(depth, cutoff);
 
         if start.elapsed().as_secs() < 1 {
-            let best_move = self.minimax_best_move(depth + 2);
+            let best_move = self.minimax_best_move(depth + 2, cutoff);
             return best_move;
         }
 
@@ -811,7 +890,7 @@ impl Game {
             } else {
                 // AI move
                 println!("AI thinking...");
-                let mv = game.deepening_minimax(depth);
+                let mv = game.deepening_minimax(depth, 0);
                 println!("AI plays {:?}", mv);
                 // safe = false since minimax guarantees a legal move
                 game.make_move(mv, false);
@@ -827,7 +906,7 @@ impl Game {
         }
     }
 
-    fn minimax_self_play(width: i32, height: i32, depth: i32) {
+    fn minimax_self_play(width: i32, height: i32) {
         // play a game against itself using minimax
         let mut game = Game::new(width, height);
         loop {
@@ -837,7 +916,10 @@ impl Game {
                 if game.blue_turn { "Blue" } else { "Green" }
             );
 
-            let mv = game.minimax_best_move(depth);
+            let mv = match game.blue_turn {
+                true => game.minimax_best_move(7, 7),
+                false => game.minimax_best_move(5, 0),
+            };
             println!("AI plays {:?}", mv);
             // safe = false since minimax guarantees a legal move
             game.make_move(mv, false);
@@ -959,6 +1041,7 @@ impl Game {
 #[cfg(test)]
 mod tests {
     use crate::Game;
+    use crate::Move;
     use std::time::Instant;
 
     // #[test]
@@ -989,7 +1072,7 @@ mod tests {
 
     #[test]
     fn play() {
-        // Game::play_against_minimax(7, 7, 5, true);
-        Game::minimax_self_play(7, 7, 5);
+        // Game::play_against_minimax(7, 7, 7, true);
+        Game::minimax_self_play(7, 7);
     }
 }
