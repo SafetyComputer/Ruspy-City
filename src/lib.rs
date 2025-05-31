@@ -8,9 +8,7 @@ use std::io::Write;
 use std::ops::Add;
 use std::time;
 
-
 use rand::Rng;
-
 
 #[derive(Clone)]
 #[pyclass(name = "Move")]
@@ -477,7 +475,7 @@ pub struct Game {
     blue_reachable_cache: Board<bool>,
     green_reachable_cache: Board<bool>,
     blue_steps_cache: Board<i32>,
-    green_steps_cache: Board<i32>
+    green_steps_cache: Board<i32>,
 }
 
 impl Game {
@@ -495,16 +493,11 @@ impl Game {
             blue_reachable_cache: Board::new(width, height, false),
             green_reachable_cache: Board::new(width, height, false),
             blue_steps_cache: Board::new(width, height, -1),
-            green_steps_cache: Board::new(width, height, -1)
+            green_steps_cache: Board::new(width, height, -1),
         }
     }
 
-    fn reachable_with_cache(
-        &mut self, 
-        start: Coordinate,
-        step: i32,
-        ignore_other_player: bool,
-    ) {
+    fn reachable_with_cache(&mut self, start: Coordinate, step: i32, ignore_other_player: bool) {
         let reachable = if start == self.blue_position {
             self.blue_reachable_cache.clean();
             &mut self.blue_reachable_cache
@@ -1151,7 +1144,7 @@ impl Game {
 
     fn game_over(&mut self) -> bool {
         //     the game is over when the green player can't reach the blue player
-        self.reachable_with_cache(self.blue_position,self.height * self.height, true);
+        self.reachable_with_cache(self.blue_position, self.height * self.height, true);
         let blue_reachable = &mut self.blue_reachable_cache;
 
         if !blue_reachable.get(self.green_position) {
@@ -1283,7 +1276,7 @@ impl Game {
         }
     }
 
-    fn minimax_self_play(width: i32, height: i32) -> Winner {
+    fn minimax_self_play(width: i32, height: i32, record_moves: bool) -> Winner {
         // play a game against itself using minimax
         let mut game = Game::new(width, height);
         let mut json_buffer: Vec<serde_json::Value> = Vec::new();
@@ -1495,7 +1488,7 @@ mod tests {
         let mut result: Vec<Winner> = Vec::new();
         for i in 0..10 {
             println!("Game {}", i + 1);
-            let winner = Game::minimax_self_play(7, 7);
+            let winner = Game::minimax_self_play(7, 7, true);
             result.push(winner);
             println!("RESULT");
             print!(
