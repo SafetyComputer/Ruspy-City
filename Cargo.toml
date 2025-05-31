@@ -11,6 +11,7 @@ crate-type = ["cdylib"]
 
 [profile.test]
 opt-level = 3
+lto = true
 
 [profile.release]
 lto = true

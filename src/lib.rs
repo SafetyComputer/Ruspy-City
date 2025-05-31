@@ -8,7 +8,10 @@ use std::io::Write;
 use std::ops::Add;
 use std::time;
 
+
 use rand::Rng;
+
+
 #[derive(Clone)]
 #[pyclass(name = "Move")]
 struct PyMove {
@@ -65,7 +68,7 @@ impl PyGame {
     }
 
     /// Return all legal moves as a list of PyMove.
-    fn possible_moves(&self) -> Vec<PyMove> {
+    fn possible_moves(&mut self) -> Vec<PyMove> {
         self.inner
             .possible_moves()
             .iter()
@@ -102,7 +105,7 @@ impl PyGame {
     }
 
     /// Check whether the game is over.
-    fn game_over(&self) -> bool {
+    fn game_over(&mut self) -> bool {
         self.inner.game_over()
     }
 
@@ -161,7 +164,7 @@ impl PyGame {
     }
 
     /// Return (winner, (blue_score, green_score))
-    fn game_result(&self) -> (String, (i32, i32)) {
+    fn game_result(&mut self) -> (String, (i32, i32)) {
         let (winner, score) = self.inner.game_result();
         let w = match winner {
             Winner::Blue => "Blue",
@@ -247,6 +250,19 @@ impl<T: Copy> Board<T> {
 impl Board<bool> {
     fn total(&self) -> usize {
         self.board_matrix.iter().flatten().filter(|&&x| x).count()
+    }
+    fn clean(&mut self) {
+        for i in self.board_matrix.iter_mut() {
+            i.fill(false);
+        }
+    }
+}
+
+impl Board<i32> {
+    fn clean(&mut self) {
+        for i in self.board_matrix.iter_mut() {
+            i.fill(-1);
+        }
     }
 }
 
@@ -437,7 +453,7 @@ struct Score {
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
-enum Winner {
+pub enum Winner {
     Blue,
     Green,
     Draw,
@@ -458,6 +474,10 @@ pub struct Game {
 
     history: Vec<Move>,                    // history of moves
     evaluation_cache: BTreeMap<u128, i32>, // cache for evaluation
+    blue_reachable_cache: Board<bool>,
+    green_reachable_cache: Board<bool>,
+    blue_steps_cache: Board<i32>,
+    green_steps_cache: Board<i32>
 }
 
 impl Game {
@@ -472,6 +492,66 @@ impl Game {
             blue_turn: true,
             history: Vec::new(),
             evaluation_cache: BTreeMap::new(),
+            blue_reachable_cache: Board::new(width, height, false),
+            green_reachable_cache: Board::new(width, height, false),
+            blue_steps_cache: Board::new(width, height, -1),
+            green_steps_cache: Board::new(width, height, -1)
+        }
+    }
+
+    fn reachable_with_cache(
+        &mut self, 
+        start: Coordinate,
+        step: i32,
+        ignore_other_player: bool,
+    ) {
+        let reachable = if start == self.blue_position {
+            self.blue_reachable_cache.clean();
+            &mut self.blue_reachable_cache
+        } else {
+            self.green_reachable_cache.clean();
+            &mut self.green_reachable_cache
+        };
+        let mut queue = VecDeque::new();
+        queue.push_back((start, 0));
+        reachable.set(start, true);
+
+        // determine the "other" player so we don't move over them
+        let other_player = if start == self.blue_position {
+            self.green_position
+        } else {
+            self.blue_position
+        };
+
+        while !queue.is_empty() {
+            let (current, current_step) = queue.pop_front().unwrap();
+            if current_step == step {
+                continue;
+            }
+
+            for direction in DIRECION_VALUES {
+                let next = current.move_to(direction);
+                if !next.inside(self.width, self.height) {
+                    continue;
+                }
+                // don't move over the other player's pawn
+                if next == other_player && !ignore_other_player {
+                    continue;
+                }
+                if *reachable.get(next) {
+                    continue;
+                }
+                // check walls
+                if (direction == Direction::Right && self.vertical_walls.get(current).is_empty())
+                    || (direction == Direction::Left && self.vertical_walls.get(next).is_empty())
+                    || (direction == Direction::Down
+                        && self.horizontal_walls.get(current).is_empty())
+                    || (direction == Direction::Up && self.horizontal_walls.get(next).is_empty())
+                {
+                    reachable.set(next, true);
+                    queue.push_back((next, current_step + 1));
+                }
+            }
         }
     }
 
@@ -526,7 +606,55 @@ impl Game {
 
         reachable
     }
+    fn steps_with_cache(&mut self, start: Coordinate) {
+        let dist = if start == self.blue_position {
+            self.blue_steps_cache.clean();
+            &mut self.blue_steps_cache
+        } else {
+            self.green_steps_cache.clean();
+            &mut self.green_steps_cache
+        };
+        let mut queue: VecDeque<(Coordinate, i32)> = VecDeque::new();
 
+        // determine the "other" player so we don't move over them
+        let other_player = if start == self.blue_position {
+            self.green_position
+        } else {
+            self.blue_position
+        };
+
+        dist.set(start, 0);
+        queue.push_back((start, 0));
+
+        while !queue.is_empty() {
+            let (current, d) = queue.remove(0).unwrap();
+            for dir in DIRECION_VALUES {
+                let next = current.move_to(dir);
+                if !next.inside(self.width, self.height) {
+                    continue;
+                }
+                // don't move over the other player's pawn
+                if next == other_player {
+                    continue;
+                }
+                // already visited?
+                if *dist.get(next) != -1 {
+                    continue;
+                }
+                // check walls
+                let can_move = match dir {
+                    Direction::Right => self.vertical_walls.get(current).is_empty(),
+                    Direction::Left => self.vertical_walls.get(next).is_empty(),
+                    Direction::Down => self.horizontal_walls.get(current).is_empty(),
+                    Direction::Up => self.horizontal_walls.get(next).is_empty(),
+                };
+                if can_move {
+                    dist.set(next, d + 1);
+                    queue.push_back((next, d + 1));
+                }
+            }
+        }
+    }
     fn steps_to_reach(&self, start: Coordinate) -> Board<i32> {
         let mut dist = Board::new(self.width, self.height, -1);
         let mut queue: VecDeque<(Coordinate, i32)> = VecDeque::new();
@@ -573,15 +701,19 @@ impl Game {
         dist
     }
 
-    fn possible_moves(&self) -> Vec<Move> {
+    fn possible_moves(&mut self) -> Vec<Move> {
         let mut moves = Vec::new();
         let start = if self.blue_turn {
             self.blue_position
         } else {
             self.green_position
         };
-
-        let reachable = self.reachable_positions(start, 3, false);
+        self.reachable_with_cache(start, 3, false);
+        let reachable = if self.blue_turn {
+            &mut self.blue_reachable_cache
+        } else {
+            &mut self.green_reachable_cache
+        };
 
         // get all possible moves
         // the wall placement is possible if the wall is not placed and the edge is not on the border
@@ -718,12 +850,13 @@ impl Game {
         self.blue_turn = !self.blue_turn;
     }
 
-    fn territory_difference(&self) -> i32 {
+    fn territory_difference(&mut self) -> i32 {
         // if it takes less steps for one player to reach a cell, the the cell is counted as the player's territory
         // always return blue territory - green territory
-
-        let blue_dist = self.steps_to_reach(self.blue_position);
-        let green_dist = self.steps_to_reach(self.green_position);
+        self.steps_with_cache(self.blue_position);
+        self.steps_with_cache(self.green_position);
+        let blue_dist = &mut self.blue_steps_cache;
+        let green_dist = &mut self.green_steps_cache;
 
         let mut blue_territory = 0;
         let mut green_territory = 0;
@@ -748,15 +881,15 @@ impl Game {
         blue_territory - green_territory
     }
 
-    fn evaluate(&self) -> i32 {
+    fn evaluate(&mut self) -> i32 {
         // evaluate the game state
         // larger positive value means better for blue, larger negative value means better for green
 
         if self.game_over() {
-            let blue_reachable =
-                self.reachable_positions(self.blue_position, self.height * self.height, true);
-            let green_reachable =
-                self.reachable_positions(self.green_position, self.height * self.height, true);
+            self.reachable_with_cache(self.blue_position, self.height * self.height, true);
+            self.reachable_with_cache(self.green_position, self.height * self.height, true);
+            let blue_reachable = &mut self.blue_reachable_cache;
+            let green_reachable = &mut self.green_reachable_cache;
 
             let blue_score = blue_reachable.total() as i32;
             let green_score = green_reachable.total() as i32;
@@ -1016,11 +1149,10 @@ impl Game {
         score
     }
 
-    fn game_over(&self) -> bool {
+    fn game_over(&mut self) -> bool {
         //     the game is over when the green player can't reach the blue player
-
-        let blue_reachable =
-            self.reachable_positions(self.blue_position, self.height * self.height, true);
+        self.reachable_with_cache(self.blue_position,self.height * self.height, true);
+        let blue_reachable = &mut self.blue_reachable_cache;
 
         if !blue_reachable.get(self.green_position) {
             return true;
@@ -1028,13 +1160,12 @@ impl Game {
         false
     }
 
-    fn game_result(&self) -> (Winner, Score) {
+    fn game_result(&mut self) -> (Winner, Score) {
         // the score is the area of the player can reach
-
-        let blue_reachable =
-            self.reachable_positions(self.blue_position, self.height * self.height, true);
-        let green_reachable =
-            self.reachable_positions(self.green_position, self.height * self.height, true);
+        self.reachable_with_cache(self.blue_position, self.height * self.height, true);
+        self.reachable_with_cache(self.green_position, self.height * self.height, true);
+        let blue_reachable = &mut self.blue_reachable_cache;
+        let green_reachable = &mut self.green_reachable_cache;
 
         let blue_score = blue_reachable.total() as i32;
         let green_score = green_reachable.total() as i32;
@@ -1152,7 +1283,7 @@ impl Game {
         }
     }
 
-    fn minimax_self_play(width: i32, height: i32, record_moves: bool) -> Winner {
+    fn minimax_self_play(width: i32, height: i32) -> Winner {
         // play a game against itself using minimax
         let mut game = Game::new(width, height);
         let mut json_buffer: Vec<serde_json::Value> = Vec::new();
@@ -1364,7 +1495,7 @@ mod tests {
         let mut result: Vec<Winner> = Vec::new();
         for i in 0..10 {
             println!("Game {}", i + 1);
-            let winner = Game::minimax_self_play(7, 7, true);
+            let winner = Game::minimax_self_play(7, 7);
             result.push(winner);
             println!("RESULT");
             print!(
