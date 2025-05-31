@@ -1,12 +1,15 @@
 use pyo3::prelude::*;
+use serde_json::json;
 use std::cmp::PartialEq;
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::ops::Add;
 use std::time;
 
 use rand::Rng;
-
+#[derive(Clone)]
 #[pyclass(name = "Move")]
 struct PyMove {
     #[pyo3(get)]
@@ -23,6 +26,21 @@ impl PyMove {
             destination,
             place_wall,
         }
+    }
+
+    #[staticmethod]
+    fn from_notation(notation: &str) -> PyResult<PyMove> {
+        let mv = Move::from_notation(notation)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+        let dest = mv.destination;
+        let dir = match mv.place_wall {
+            Direction::Up => "U",
+            Direction::Down => "D",
+            Direction::Left => "L",
+            Direction::Right => "R",
+        }
+        .to_string();
+        Ok(PyMove::new((dest.x, dest.y), dir))
     }
 }
 
@@ -66,22 +84,80 @@ impl PyGame {
     }
 
     /// Attempt to make a move. `place_wall` should be "U", "D", "L" or "R".
-    fn make_move(&mut self, destination: (i32, i32), place_wall: String, safe: bool) -> bool {
-        let coord = Coordinate::new(destination.0, destination.1);
-        let dir = match place_wall.as_str() {
+    fn make_move(&mut self, mv: PyMove, safe: bool) -> PyResult<bool> {
+        let destination = Coordinate::new(mv.destination.0, mv.destination.1);
+        let place_wall = match mv.place_wall.as_str() {
             "U" => Direction::Up,
             "D" => Direction::Down,
             "L" => Direction::Left,
             "R" => Direction::Right,
-            _ => return false,
+            _ => {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "Invalid wall direction",
+                ))
+            }
         };
-        let mv = Move::new(coord, dir);
-        self.inner.make_move(mv, safe)
+        let move_obj = Move::new(destination, place_wall);
+        Ok(self.inner.make_move(move_obj, safe))
     }
 
     /// Check whether the game is over.
     fn game_over(&self) -> bool {
         self.inner.game_over()
+    }
+
+    fn get_state_planes(&self) -> Vec<Vec<Vec<bool>>> {
+        let mut planes = Vec::new();
+
+        // Blue position plane
+        let mut blue_plane = Board::new(self.inner.width, self.inner.height, false);
+        blue_plane.set(self.inner.blue_position, true);
+        planes.push(blue_plane.board_matrix);
+
+        // Green position plane
+        let mut green_plane = Board::new(self.inner.width, self.inner.height, false);
+        green_plane.set(self.inner.green_position, true);
+        planes.push(green_plane.board_matrix);
+
+        // Horizontal walls plane
+        let mut horizontal_walls_plane = Board::new(self.inner.width, self.inner.height, false);
+        for x in 0..self.inner.width {
+            for y in 0..self.inner.height - 1 {
+                horizontal_walls_plane.set(
+                    Coordinate::new(x, y),
+                    !self
+                        .inner
+                        .horizontal_walls
+                        .get(Coordinate::new(x, y))
+                        .is_empty(),
+                );
+            }
+        }
+        planes.push(horizontal_walls_plane.board_matrix);
+
+        // Vertical walls plane
+        let mut vertical_walls_plane = Board::new(self.inner.width, self.inner.height, false);
+        for x in 0..self.inner.width - 1 {
+            for y in 0..self.inner.height {
+                vertical_walls_plane.set(
+                    Coordinate::new(x, y),
+                    !self
+                        .inner
+                        .vertical_walls
+                        .get(Coordinate::new(x, y))
+                        .is_empty(),
+                );
+            }
+        }
+        planes.push(vertical_walls_plane.board_matrix);
+
+        let turn_indicator_plane = match self.inner.blue_turn {
+            true => Board::new(self.inner.width, self.inner.height, true),
+            false => Board::new(self.inner.width, self.inner.height, false),
+        };
+        planes.push(turn_indicator_plane.board_matrix);
+
+        planes
     }
 
     /// Return (winner, (blue_score, green_score))
@@ -174,6 +250,15 @@ impl Board<bool> {
     }
 }
 
+impl Board<Cell> {
+    fn to_bool(&self) -> Vec<Vec<bool>> {
+        self.board_matrix
+            .iter()
+            .map(|row| row.iter().map(|&cell| !cell.is_empty()).collect())
+            .collect()
+    }
+}
+
 #[derive(Copy, Clone, PartialEq)]
 enum Direction {
     Up,
@@ -230,6 +315,10 @@ impl Coordinate {
     fn move_to(self, direction: Direction) -> Coordinate {
         self + direction.relative_position()
     }
+
+    fn to_tuple(self) -> (i32, i32) {
+        (self.x, self.y)
+    }
 }
 
 impl PartialEq for Coordinate {
@@ -276,6 +365,17 @@ impl Move {
         };
 
         Ok(Move::new(destination, place_wall))
+    }
+
+    fn to_flat(&self) -> ((i32, i32), i32) {
+        // destination, wall_direction UDLR -> 0123
+        let wall_direction = match self.place_wall {
+            Direction::Up => 0,
+            Direction::Down => 1,
+            Direction::Left => 2,
+            Direction::Right => 3,
+        };
+        (self.destination.to_tuple(), wall_direction)
     }
 }
 
@@ -795,7 +895,7 @@ impl Game {
         scored
     }
 
-    fn iterative_deepening_minimax(&mut self, depth: i32) -> Move {
+    fn iterative_deepening_minimax(&mut self, depth: i32) -> EvaluatedMove {
         // iterative deepening minimax with aspiration windows
         let start = time::Instant::now();
         let max_depth = match self.history.len().cmp(&6) {
@@ -905,7 +1005,7 @@ impl Game {
         }
 
         println!("Final best move: {:?} with score {}", best_move, best_score);
-        best_move
+        EvaluatedMove::new(best_move, best_score)
     }
 
     // Helper function to evaluate a specific move
@@ -1036,10 +1136,10 @@ impl Game {
             } else {
                 // AI move
                 println!("AI thinking...");
-                let mv = game.iterative_deepening_minimax(2);
-                println!("AI plays {:?}", mv);
+                let ev_mv = game.iterative_deepening_minimax(2);
+                println!("AI plays {:?}", ev_mv.mv);
                 // safe = false since minimax guarantees a legal move
-                game.make_move(mv, false);
+                game.make_move(ev_mv.mv, false);
             }
 
             if game.game_over() {
@@ -1052,9 +1152,12 @@ impl Game {
         }
     }
 
-    fn minimax_self_play(width: i32, height: i32) -> Winner {
+    fn minimax_self_play(width: i32, height: i32, record_moves: bool) -> Winner {
         // play a game against itself using minimax
         let mut game = Game::new(width, height);
+        let mut json_buffer: Vec<serde_json::Value> = Vec::new();
+        let winner: Winner;
+
         loop {
             game.print();
             println!(
@@ -1062,22 +1165,58 @@ impl Game {
                 if game.blue_turn { "Blue" } else { "Green" }
             );
 
-            let mv = match game.blue_turn {
-                true => game.iterative_deepening_minimax(2),
-                false => game.minimax_best_move(5, 0),
+            let eval_mv = match game.blue_turn {
+                true => game.iterative_deepening_minimax(1),
+                false => game.iterative_deepening_minimax(1),
             };
-            println!("AI plays {:?}", mv);
+            println!("AI plays {:?}", eval_mv.mv);
             // safe = false since minimax guarantees a legal move
-            game.make_move(mv, false);
+
+            if record_moves {
+                let mv = eval_mv.mv;
+                let ev = eval_mv.ev;
+
+                let json = json!({
+                    "hor_wall": game.horizontal_walls.to_bool(),
+                    "ver_wall": game.vertical_walls.to_bool(),
+                    "blue_pos": game.blue_position.to_tuple(),
+                    "green_pos": game.green_position.to_tuple(),
+                    "blue_turn": game.blue_turn,
+                    "best_move": mv.to_flat(),
+                    "evaluation": ev,
+                });
+
+                json_buffer.push(json);
+            }
+            game.make_move(eval_mv.mv, false);
 
             if game.game_over() {
                 game.print();
-                let (winner, score) = game.game_result();
+                let (_winner, score) = game.game_result();
+                winner = _winner;
                 println!("Game over, {:?} wins!", winner);
                 println!("Score: {} - {}", score.blue, score.green);
-                return winner;
+                break;
             }
         }
+        // append to file
+        if record_moves {
+            {
+                // Ensure the directory "log" exists before running
+                let mut file = OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open("log/self_play.json")
+                    .expect("Failed to open or create log/self_play.json");
+                for entry in &json_buffer {
+                    let line =
+                        serde_json::to_string(entry).expect("Failed to serialize JSON entry");
+                    writeln!(file, "{}", line).expect("Failed to write to log/self_play.json");
+                }
+            }
+        }
+
+        winner
     }
 
     fn print(&self) {
@@ -1225,7 +1364,7 @@ mod tests {
         let mut result: Vec<Winner> = Vec::new();
         for i in 0..10 {
             println!("Game {}", i + 1);
-            let winner = Game::minimax_self_play(7, 7);
+            let winner = Game::minimax_self_play(7, 7, true);
             result.push(winner);
             println!("RESULT");
             print!(
