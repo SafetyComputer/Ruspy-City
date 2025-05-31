@@ -6,6 +6,7 @@ use std::fmt;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::ops::Add;
+use std::thread;
 use std::time;
 
 use rand::Rng;
@@ -1276,7 +1277,7 @@ impl Game {
         }
     }
 
-    fn minimax_self_play(width: i32, height: i32, record_moves: bool) -> Winner {
+    fn minimax_self_play(width: i32, height: i32, record_moves: bool, file_path: &str) -> Winner {
         // play a game against itself using minimax
         let mut game = Game::new(width, height);
         let mut json_buffer: Vec<serde_json::Value> = Vec::new();
@@ -1330,7 +1331,7 @@ impl Game {
                 let mut file = OpenOptions::new()
                     .create(true)
                     .append(true)
-                    .open("log/self_play.json")
+                    .open(file_path)
                     .expect("Failed to open or create log/self_play.json");
                 for entry in &json_buffer {
                     let line =
@@ -1341,6 +1342,27 @@ impl Game {
         }
 
         winner
+    }
+
+    fn multithread_self_play(width: i32, height: i32, num_threads: i32) {
+        let mut handles = Vec::with_capacity(num_threads as usize);
+
+        for i in 0..num_threads {
+            let file_path = format!("log/self_play_thread_{}.json", i);
+            let width = width;
+            let height = height;
+
+            let handle = thread::spawn(move || {
+                // run one self‐play in this thread, recording moves to its own file
+                Game::minimax_self_play(width, height, true, &file_path);
+            });
+
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            let _ = handle.join();
+        }
     }
 
     fn print(&self) {
@@ -1484,19 +1506,8 @@ mod tests {
     fn play() {
         // Game::play_against_minimax(7, 7, true);
         // Game::play(7, 7);
-
-        let mut result: Vec<Winner> = Vec::new();
-        for i in 0..10 {
-            println!("Game {}", i + 1);
-            let winner = Game::minimax_self_play(7, 7, true);
-            result.push(winner);
-            println!("RESULT");
-            print!(
-                "{}-{}-{}",
-                result.iter().filter(|&&w| w == Winner::Blue).count(),
-                result.iter().filter(|&&w| w == Winner::Draw).count(),
-                result.iter().filter(|&&w| w == Winner::Green).count()
-            );
+        loop {
+            Game::multithread_self_play(7, 7, 8);
         }
     }
 }
