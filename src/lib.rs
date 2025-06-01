@@ -1260,21 +1260,19 @@ impl Game {
         width: i32,
         height: i32,
         num_threads: i32,
-        max_games_per_thread: i32,
+        max_games: i32,
     ) {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(num_threads as usize)
             .build()
             .unwrap();
         pool.scope(|s| {
-            for _ in 0..num_threads {
+            for _ in 0..max_games {
                 s.spawn(move |_| {
                     let id = rayon::current_thread_index().unwrap();
                     let file_path = format!("log/self_play_thread_{}.json", id);
                     // run one self‐play in this thread, recording moves to its own file
-                    for _ in 0..max_games_per_thread {
-                        Game::minimax_self_play(width, height, true, &file_path);
-                    }
+                    Game::minimax_self_play(width, height, true, &file_path);
                 });
             }
         });
