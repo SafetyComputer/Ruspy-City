@@ -954,10 +954,10 @@ impl Game {
 
         // Main iterative deepening loop
         while current_depth <= max_depth && start.elapsed().as_secs() < time_limit_secs {
-            println!(
-                "Searching at depth {} with window around {}",
-                current_depth, best_score
-            );
+            // println!(
+            //     "Searching at depth {} with window around {}",
+            //     current_depth, best_score
+            // );
 
             // Set aspiration window bounds
             let mut alpha = best_score - window_size;
@@ -999,14 +999,14 @@ impl Game {
                     // Check if result was outside the window
                     if new_score <= alpha {
                         // Failed low, retry with wider window
-                        println!("Failed low: {} <= {}, widening window", new_score, alpha);
+                        // println!("Failed low: {} <= {}, widening window", new_score, alpha);
                         window_size *= 2;
                         alpha = new_score - window_size;
                         retry = true;
                         continue;
                     } else if new_score >= beta {
                         // Failed high, retry with wider window
-                        println!("Failed high: {} >= {}, widening window", new_score, beta);
+                        // println!("Failed high: {} >= {}, widening window", new_score, beta);
                         window_size *= 2;
                         beta = new_score + window_size;
                         retry = true;
@@ -1026,12 +1026,12 @@ impl Game {
                         best_move = best_moves[rng.random_range(0..best_moves.len())];
 
                         // Diagnostics
-                        println!("Top 5 moves:");
-                        for em in scored.iter().take(5) {
-                            println!("  {:?}", em);
-                        }
-                        println!("Nodes evaluated: {}", nodes_evaluated);
-                        println!("Elapsed time: {:?}", start.elapsed());
+                        // println!("Top 5 moves:");
+                        // for em in scored.iter().take(5) {
+                        //     println!("  {:?}", em);
+                        // }
+                        // println!("Nodes evaluated: {}", nodes_evaluated);
+                        // println!("Elapsed time: {:?}", start.elapsed());
                     }
                 }
             }
@@ -1043,7 +1043,7 @@ impl Game {
             current_depth += 2;
         }
 
-        println!("Final best move: {:?} with score {}", best_move, best_score);
+        // println!("Final best move: {:?} with score {}", best_move, best_score);
         EvaluatedMove::new(best_move, best_score)
     }
 
@@ -1196,17 +1196,17 @@ impl Game {
         let winner: Winner;
 
         loop {
-            game.print();
-            println!(
-                "Now it's {}'s turn",
-                if game.blue_turn { "Blue" } else { "Green" }
-            );
+            // game.print();
+            // println!(
+            //     "Now it's {}'s turn",
+            //     if game.blue_turn { "Blue" } else { "Green" }
+            // );
 
             let eval_mv = match game.blue_turn {
                 true => game.iterative_deepening_minimax(1),
                 false => game.iterative_deepening_minimax(1),
             };
-            println!("AI plays {:?}", eval_mv.mv);
+            // println!("AI plays {:?}", eval_mv.mv);
             // safe = false since minimax guarantees a legal move
 
             if record_moves {
@@ -1228,7 +1228,7 @@ impl Game {
             game.make_move(eval_mv.mv, false);
 
             if game.game_over() {
-                game.print();
+                // game.print();
                 let (_winner, score) = game.game_result();
                 winner = _winner;
                 println!("Game over, {:?} wins!", winner);
@@ -1421,6 +1421,6 @@ mod tests {
     fn play() {
         // Game::play_against_minimax(7, 7, true);
         // Game::play(7, 7);
-        Game::multithread_self_play(7, 7, 4, 2);
+        Game::multithread_self_play(7, 7, 16, 10000);
     }
 }
