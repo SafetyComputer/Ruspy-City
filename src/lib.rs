@@ -470,7 +470,7 @@ pub struct Game {
 
     blue_turn: bool, // true for blue, false for green
 
-    history: Vec<Move>,                    // history of moves
+    history: Vec<Move>, // history of moves
     blue_reachable_cache: Board<bool>,
     green_reachable_cache: Board<bool>,
     blue_steps_cache: Board<i32>,
@@ -595,7 +595,7 @@ impl Game {
             }
         }
     }
-    
+
     fn possible_moves(&mut self) -> Vec<Move> {
         let mut moves = Vec::new();
         let start = if self.blue_turn {
@@ -790,9 +790,9 @@ impl Game {
             let green_score = green_reachable.total() as i32;
 
             if blue_score > green_score {
-                return 1000; // Blue wins
+                return 100; // Blue wins
             } else if green_score > blue_score {
-                return -1000; // Green wins
+                return -100; // Green wins
             } else {
                 return 0; // Draw
             }
@@ -840,8 +840,27 @@ impl Game {
         cutoff: i32,
     ) -> i32 {
         *nodes += 1;
+
+        if self.game_over() {
+            self.reachable_with_cache(self.blue_position, self.height * self.height, true);
+            self.reachable_with_cache(self.green_position, self.height * self.height, true);
+            let blue_reachable = &mut self.blue_reachable_cache;
+            let green_reachable = &mut self.green_reachable_cache;
+
+            let blue_score = blue_reachable.total() as i32;
+            let green_score = green_reachable.total() as i32;
+
+            if blue_score > green_score {
+                return 100; // Blue wins
+            } else if green_score > blue_score {
+                return -100; // Green wins
+            } else {
+                return 0; // Draw
+            }
+        }
+
         let moves = match depth {
-            0 => return self.evaluate(),
+            0 => return self.territory_difference(),
             1 => self.possible_moves(),
             _ => self.evaluation_sorted_moves(cutoff),
         };
@@ -853,9 +872,15 @@ impl Game {
             if self.blue_turn {
                 value = value.max(score);
                 alpha = alpha.max(value);
+                if alpha == 100 {
+                    return 100;
+                }
             } else {
                 value = value.min(score);
                 beta = beta.min(value);
+                if beta == -100 {
+                    return -100;
+                }
             }
             if alpha >= beta {
                 break;
@@ -933,7 +958,7 @@ impl Game {
                 "Searching at depth {} with window around {}",
                 current_depth, best_score
             );
- 
+
             // Set aspiration window bounds
             let mut alpha = best_score - window_size;
             let mut beta = best_score + window_size;
@@ -1231,21 +1256,25 @@ impl Game {
         winner
     }
 
-    pub fn multithread_self_play(width: i32, height: i32, num_threads: i32, max_games: i32) {
+    pub fn multithread_self_play(
+        width: i32,
+        height: i32,
+        num_threads: i32,
+        max_games_per_thread: i32,
+    ) {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(num_threads as usize)
             .build()
             .unwrap();
-
         pool.scope(|s| {
-            for _ in 0..max_games {
-                
-
+            for _ in 0..num_threads {
                 s.spawn(move |_| {
                     let id = rayon::current_thread_index().unwrap();
                     let file_path = format!("log/self_play_thread_{}.json", id);
                     // run one self‐play in this thread, recording moves to its own file
-                    Game::minimax_self_play(width, height, true, &file_path);
+                    for _ in 0..max_games_per_thread {
+                        Game::minimax_self_play(width, height, true, &file_path);
+                    }
                 });
             }
         });
@@ -1392,8 +1421,6 @@ mod tests {
     fn play() {
         // Game::play_against_minimax(7, 7, true);
         // Game::play(7, 7);
-        loop {
-            Game::multithread_self_play(7, 7, 8, 10);
-        }
+        Game::multithread_self_play(7, 7, 4, 2);
     }
 }
