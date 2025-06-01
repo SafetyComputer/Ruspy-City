@@ -61,7 +61,11 @@ class PolicyHead(nn.Module):
         self.board_len = board_len
         self.in_channels = in_channels
         self.conv = ConvBlock(in_channels, 2, 1)
-        self.fc = nn.Linear(2 * board_len ** 2, output_dim)
+        self.fc = nn.Sequential(
+            nn.Linear(2 * board_len ** 2, 128),
+            nn.ReLU(),
+            nn.Linear(128, output_dim)
+        )
 
     def forward(self, x):
         x = self.conv(x)
@@ -85,9 +89,9 @@ class ValueHead(nn.Module):
         super().__init__()
         self.in_channels = in_channels
         self.board_len = board_len
-        self.conv = ConvBlock(in_channels, 1, kernel_size=1)
+        self.conv = ConvBlock(in_channels, 2, kernel_size=1)
         self.fc = nn.Sequential(
-            nn.Linear(board_len ** 2, 128),
+            nn.Linear(board_len ** 2 * 2, 128),
             nn.ReLU(),
             nn.Linear(128, 1),
             nn.Tanh()
@@ -117,10 +121,10 @@ class PolicyValueNet(nn.Module):
         self.is_use_gpu = is_use_gpu
         self.n_feature_planes = n_feature_planes
         self.device = torch.device('cuda:0' if is_use_gpu else 'cpu')
-        self.conv = ConvBlock(n_feature_planes, 32, 3, padding=1)
-        self.residues = nn.Sequential(*[ResidueBlock(32, 32) for i in range(4)])
-        self.policy_head = PolicyHead(32, board_len, policy_output_dim)
-        self.value_head = ValueHead(32, board_len)
+        self.conv = ConvBlock(n_feature_planes, 64, 3, padding=1)
+        self.residues = nn.Sequential(*[ResidueBlock(64, 64) for i in range(8)])
+        self.policy_head = PolicyHead(64, board_len, policy_output_dim)
+        self.value_head = ValueHead(64, board_len)
         self.to(self.device)
 
     def forward(self, x):
