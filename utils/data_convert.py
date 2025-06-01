@@ -242,7 +242,7 @@ def parse_dict(data):
 
 if __name__ == "__main__":
     # get all json files in the log directory
-    log_dir = "log"  # Adjust this path to your logs directory
+    log_dir = "../log"  # Adjust this path to your logs directory
     json_files = [os.path.join(log_dir, f)
                   for f in os.listdir(log_dir) if f.endswith('.json')]
     results = []
@@ -274,7 +274,7 @@ if __name__ == "__main__":
     print(f"Evals shape: {evals.shape}")
 
     # Save the results to a .npz file
-    output_file = "data/processed_data.npz"
+    output_file = "../data/processed_data.npz"
     np.savez(output_file, planes=planes, best_moves=best_moves, evals=evals)
 
     # # load the data back
