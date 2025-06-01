@@ -1,12 +1,11 @@
 use pyo3::prelude::*;
 use serde_json::json;
 use std::cmp::PartialEq;
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::VecDeque;
 use std::fmt;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::ops::Add;
-use std::thread;
 use std::time;
 
 use rand::Rng;
@@ -472,7 +471,6 @@ pub struct Game {
     blue_turn: bool, // true for blue, false for green
 
     history: Vec<Move>,                    // history of moves
-    evaluation_cache: BTreeMap<u128, i32>, // cache for evaluation
     blue_reachable_cache: Board<bool>,
     green_reachable_cache: Board<bool>,
     blue_steps_cache: Board<i32>,
@@ -490,7 +488,6 @@ impl Game {
             vertical_walls: Board::new(width - 1, height, Cell::Empty),
             blue_turn: true,
             history: Vec::new(),
-            evaluation_cache: BTreeMap::new(),
             blue_reachable_cache: Board::new(width, height, false),
             green_reachable_cache: Board::new(width, height, false),
             blue_steps_cache: Board::new(width, height, -1),
@@ -549,57 +546,6 @@ impl Game {
         }
     }
 
-    fn reachable_positions(
-        &self,
-        start: Coordinate,
-        step: i32,
-        ignore_other_player: bool,
-    ) -> Board<bool> {
-        let mut reachable = Board::new(self.width, self.height, false);
-        let mut queue = VecDeque::new();
-        queue.push_back((start, 0));
-        reachable.set(start, true);
-
-        // determine the "other" player so we don't move over them
-        let other_player = if start == self.blue_position {
-            self.green_position
-        } else {
-            self.blue_position
-        };
-
-        while !queue.is_empty() {
-            let (current, current_step) = queue.pop_front().unwrap();
-            if current_step == step {
-                continue;
-            }
-
-            for direction in DIRECION_VALUES {
-                let next = current.move_to(direction);
-                if !next.inside(self.width, self.height) {
-                    continue;
-                }
-                // don't move over the other player's pawn
-                if next == other_player && !ignore_other_player {
-                    continue;
-                }
-                if *reachable.get(next) {
-                    continue;
-                }
-                // check walls
-                if (direction == Direction::Right && self.vertical_walls.get(current).is_empty())
-                    || (direction == Direction::Left && self.vertical_walls.get(next).is_empty())
-                    || (direction == Direction::Down
-                        && self.horizontal_walls.get(current).is_empty())
-                    || (direction == Direction::Up && self.horizontal_walls.get(next).is_empty())
-                {
-                    reachable.set(next, true);
-                    queue.push_back((next, current_step + 1));
-                }
-            }
-        }
-
-        reachable
-    }
     fn steps_with_cache(&mut self, start: Coordinate) {
         let dist = if start == self.blue_position {
             self.blue_steps_cache.clean();
@@ -649,52 +595,7 @@ impl Game {
             }
         }
     }
-    fn steps_to_reach(&self, start: Coordinate) -> Board<i32> {
-        let mut dist = Board::new(self.width, self.height, -1);
-        let mut queue: VecDeque<(Coordinate, i32)> = VecDeque::new();
-
-        // determine the "other" player so we don't move over them
-        let other_player = if start == self.blue_position {
-            self.green_position
-        } else {
-            self.blue_position
-        };
-
-        dist.set(start, 0);
-        queue.push_back((start, 0));
-
-        while !queue.is_empty() {
-            let (current, d) = queue.remove(0).unwrap();
-            for dir in DIRECION_VALUES {
-                let next = current.move_to(dir);
-                if !next.inside(self.width, self.height) {
-                    continue;
-                }
-                // don't move over the other player's pawn
-                if next == other_player {
-                    continue;
-                }
-                // already visited?
-                if *dist.get(next) != -1 {
-                    continue;
-                }
-                // check walls
-                let can_move = match dir {
-                    Direction::Right => self.vertical_walls.get(current).is_empty(),
-                    Direction::Left => self.vertical_walls.get(next).is_empty(),
-                    Direction::Down => self.horizontal_walls.get(current).is_empty(),
-                    Direction::Up => self.horizontal_walls.get(next).is_empty(),
-                };
-                if can_move {
-                    dist.set(next, d + 1);
-                    queue.push_back((next, d + 1));
-                }
-            }
-        }
-
-        dist
-    }
-
+    
     fn possible_moves(&mut self) -> Vec<Move> {
         let mut moves = Vec::new();
         let start = if self.blue_turn {
@@ -901,20 +802,6 @@ impl Game {
         territory_diff
     }
 
-    fn evaluate_with_cache(&mut self) -> (i32, bool) {
-        // if cached
-        let current_position = self.convert_current_position();
-        match self.evaluation_cache.get(&current_position) {
-            Some(&score) => return (score, true), // return cached score and true for cache hit
-            None => {
-                // evaluate and cache the result
-                let score = self.evaluate();
-                self.evaluation_cache.insert(current_position, score);
-                return (score, false); // return score and false for cache miss
-            }
-        }
-    }
-
     fn convert_current_position(&self) -> u128 {
         // convert the current position to a unique u128 value
         let mut value: u128 = 0;
@@ -1046,7 +933,7 @@ impl Game {
                 "Searching at depth {} with window around {}",
                 current_depth, best_score
             );
-
+ 
             // Set aspiration window bounds
             let mut alpha = best_score - window_size;
             let mut beta = best_score + window_size;
@@ -1344,25 +1231,24 @@ impl Game {
         winner
     }
 
-    fn multithread_self_play(width: i32, height: i32, num_threads: i32) {
-        let mut handles = Vec::with_capacity(num_threads as usize);
+    pub fn multithread_self_play(width: i32, height: i32, num_threads: i32, max_games: i32) {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(num_threads as usize)
+            .build()
+            .unwrap();
 
-        for i in 0..num_threads {
-            let file_path = format!("log/self_play_thread_{}.json", i);
-            let width = width;
-            let height = height;
+        pool.scope(|s| {
+            for _ in 0..max_games {
+                
 
-            let handle = thread::spawn(move || {
-                // run one self‐play in this thread, recording moves to its own file
-                Game::minimax_self_play(width, height, true, &file_path);
-            });
-
-            handles.push(handle);
-        }
-
-        for handle in handles {
-            let _ = handle.join();
-        }
+                s.spawn(move |_| {
+                    let id = rayon::current_thread_index().unwrap();
+                    let file_path = format!("log/self_play_thread_{}.json", id);
+                    // run one self‐play in this thread, recording moves to its own file
+                    Game::minimax_self_play(width, height, true, &file_path);
+                });
+            }
+        });
     }
 
     fn print(&self) {
@@ -1472,9 +1358,9 @@ impl Game {
 #[cfg(test)]
 mod tests {
     use crate::Game;
-    use crate::Move;
-    use crate::Winner;
-    use std::time::Instant;
+    //use crate::Move;
+    //use crate::Winner;
+    //use std::time::Instant;
 
     // #[test]
     // fn benchmark() {
@@ -1507,7 +1393,7 @@ mod tests {
         // Game::play_against_minimax(7, 7, true);
         // Game::play(7, 7);
         loop {
-            Game::multithread_self_play(7, 7, 8);
+            Game::multithread_self_play(7, 7, 8, 10);
         }
     }
 }
