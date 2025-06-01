@@ -32,13 +32,13 @@ def convert_index_to_move(index):
         wall = 1
     elif 84 <= index < 126:  # LEFT wall
         index -= 84
-        x = index % 7 + 1
-        y = index // 7
+        x = index % 6 + 1
+        y = index // 6
         wall = 2
     elif 126 <= index < 168:  # RIGHT wall
         index -= 126
-        x = index % 7
-        y = index // 7
+        x = index % 6
+        y = index // 6
         wall = 3
     else:
         raise ValueError(f"Invalid index: {index}")
@@ -160,31 +160,31 @@ def transform_wall_direction(wall, transformation):
 
     elif transformation == "flip_h":
         match wall:
-            case 0: return 1
-            case 1: return 0
+            case 0: return 0
+            case 1: return 1
             case 2: return 3
             case 3: return 2
 
     elif transformation == "flip_h_rot90":
         match wall:
-            case 0: return 2
-            case 1: return 3
-            case 2: return 0
-            case 3: return 1
+            case 0: return 3
+            case 1: return 2
+            case 2: return 1
+            case 3: return 0
 
     elif transformation == "flip_h_rot180":
         match wall:
             case 0: return 1
             case 1: return 0
-            case 2: return 3
-            case 3: return 2
+            case 2: return 2
+            case 3: return 3
 
     elif transformation == "flip_h_rot270":
         match wall:
-            case 0: return 3
-            case 1: return 2
-            case 2: return 1
-            case 3: return 0
+            case 0: return 2
+            case 1: return 3
+            case 2: return 0
+            case 3: return 1
 
 
 def transform_pos(pos, transformation):
