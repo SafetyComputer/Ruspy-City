@@ -75,3 +75,4 @@ docs/_build/
 target
 log
 data
+*.npz
