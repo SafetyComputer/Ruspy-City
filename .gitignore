@@ -76,3 +76,4 @@ target
 log
 data
 *.npz
+*.pth

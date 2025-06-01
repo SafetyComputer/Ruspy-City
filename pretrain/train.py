@@ -1,3 +1,4 @@
+from matplotlib import pyplot as plt
 from collections import deque
 
 import torch
@@ -9,6 +10,7 @@ import sys
 
 from alphazero import PolicyValueNet
 from alphazero.train import PolicyValueLoss
+
 
 class GameDataset(Dataset):
     """ 自我博弈数据集类，每个样本为元组 `(feature_planes, pi, z)` """
@@ -31,11 +33,12 @@ class GameDataset(Dataset):
 device = torch.device('cuda:0')
 
 # 创建数网络
-policy_value_net = PolicyValueNet(board_len=7, n_feature_planes=5, policy_output_dim=168, is_use_gpu=True)
+policy_value_net = PolicyValueNet(
+    board_len=7, n_feature_planes=5, policy_output_dim=168, is_use_gpu=True)
 # policy_value_net: PolicyValueNet = torch.load("./model/policy_value_net_100.pth")
 
 # 创建优化器和损失函数
-optimizer = Adam(policy_value_net.parameters(), lr=1e-2, weight_decay=1e-4)
+optimizer = Adam(policy_value_net.parameters(), lr=1e-3, weight_decay=1e-4)
 criterion = PolicyValueLoss()
 
 # self.lr_scheduler = MultiStepLR(self.optimizer, [1500, 2500], gamma=0.1)
@@ -45,21 +48,34 @@ loaded_data = np.load("../data/processed_data.npz")
 
 planes, best_moves, evals = loaded_data['planes'], loaded_data['best_moves'], loaded_data['evals']
 
-planes, best_moves, evals = planes[:1000000], best_moves[:1000000], evals[:1000000] / 100.0  # 将评估值缩放到 [-1, 1] 范围
+# shuffle data
+indices = np.random.permutation(len(planes))
+planes, best_moves, evals = planes[indices], best_moves[indices], evals[indices]
 
-planes, best_moves, evals = torch.tensor(planes, dtype=torch.uint8), torch.tensor(best_moves, dtype=torch.int64), torch.tensor(evals, dtype=torch.float32)
+# 将评估值缩放到 [-1, 1] 范围
+planes, best_moves, evals = planes[:100000], best_moves[:100000], evals[:100000] / 100.0
+
+planes, best_moves, evals = torch.tensor(planes, dtype=torch.uint8), torch.tensor(
+    best_moves, dtype=torch.int64), torch.tensor(evals, dtype=torch.float32)
 best_moves = torch.nn.functional.one_hot(best_moves).to(dtype=torch.uint8)
-data_list = []
+
+train_data_list = []
+test_data_list = []
 
 print("loading data...")
 print("data shape:", planes.shape, best_moves.shape, evals.shape)
 for i in range(len(best_moves)):
-    f, p, zi = planes[i], best_moves[i], evals[i]
-    f, p, zi = f.to(device).float(), p.to(device).float(), zi.to(device).float()
-    data_list.append((f, p, zi))
+    f, pi, z = planes[i], best_moves[i], evals[i]
+    f, pi, z = f.to(device).float(), pi.to(
+        device).float(), z.to(device).float()
+
+    if i < 20000:
+        test_data_list.append((f, pi, z))
+    else:
+        train_data_list.append((f, pi, z))
 
 
-dataset = GameDataset(data_list)
+dataset = GameDataset(train_data_list)
 print(len(dataset))
 data_loader = DataLoader(dataset, batch_size=1000)
 
@@ -70,9 +86,22 @@ epoch_num = 500
 save_freq = 100
 
 for epoch in range(epoch_num):
-    p_bar = tqdm(enumerate(data_loader, 0), ncols=80, total=len(data_loader), desc=f"Epoch {epoch + 1}")
+    p_bar = tqdm(enumerate(data_loader, 0), ncols=80,
+                 total=len(data_loader), desc=f"Epoch {epoch + 1}")
     for i, data in p_bar:
         feature_planes, pi, z = data
+
+        if (epoch + 1) % 10 == 0:
+            # validation
+            policy_value_net.eval()
+            with torch.no_grad():
+                p_hat, value = policy_value_net(feature_planes)
+                loss = criterion(p_hat, pi, value.flatten(), z)
+            p_bar.set_description(f"Epoch {epoch + 1} - Validation")
+            p_bar.set_postfix(loss=loss.item())
+
+            policy_value_net.train()
+            continue
 
         # 前馈
         p_hat, value = policy_value_net(feature_planes)
@@ -86,16 +115,16 @@ for epoch in range(epoch_num):
         optimizer.step()
         # 学习率退火
         # lr_scheduler.step()
+        p_bar.set_postfix(loss=loss.item())
 
-    print(f"Epoch {epoch + 1} Loss: {loss.item():.4f}")
     loss_history.append(loss.item())
     if (epoch + 1) % save_freq == 0:
-        torch.save(policy_value_net, f"./model/policy_value_net_{epoch + 1}.pth")
-        print(f"Save model to ./model/policy_value_net_{epoch + 1}.pth")
+        torch.save(policy_value_net,
+                   f"../model/policy_value_net_{epoch + 1}.pth")
+        print(f"Save model to ../model/policy_value_net_{epoch + 1}.pth")
 
-from matplotlib import pyplot as plt
 
 plt.plot(loss_history)
 plt.savefig("./loss_history.png")
 
-torch.save(policy_value_net, f"./model/policy_value_net.pth")
+torch.save(policy_value_net, f"../model/policy_value_net.pth")
