@@ -1,1 +1,1 @@
-from .policy_value_net import PolicyValueNet
+from .policy_value_net import PolicyValueNet, PolicyValueLoss

@@ -97,32 +97,51 @@ def data_augmentation(feature_planes, best_move_index, eval):
 
     # Rotate 90 degrees
     rotated_90 = np.rot90(feature_planes, k=1, axes=(1, 2))
+    rotated_90[[2, 3]] = rotated_90[[3, 2]]
+    rotated_90[3, :, 0: 6] = rotated_90[3, :, 1: 7]
+    rotated_90[3, :, 6] = 0
     augmented_planes[1] = rotated_90
     augmented_best_move[1] = transform_move_index(best_move_index, "rot90")
 
     # Rotate 180 degrees
     rotated_180 = np.rot90(feature_planes, k=2, axes=(1, 2))
+    rotated_90[3, :, 0: 6] = rotated_90[3, :, 1: 7]
+    rotated_90[3, :, 6] = 0
+    rotated_180[2, 0: 6, :] = rotated_180[2, 1: 7, :]
+    rotated_180[2, 6, :] = 0
     augmented_planes[2] = rotated_180
     augmented_best_move[2] = transform_move_index(best_move_index, "rot180")
 
     # Rotate 270 degrees
     rotated_270 = np.rot90(feature_planes, k=3, axes=(1, 2))
+    rotated_270[[2, 3]] = rotated_270[[3, 2]]
+    rotated_270[2, 0: 6, :] = rotated_270[2, 1: 7, :]
+    rotated_270[2, 6, :] = 0
     augmented_planes[3] = rotated_270
     augmented_best_move[3] = transform_move_index(best_move_index, "rot270")
 
     # Flip horizontally
     flipped_h = np.flip(feature_planes, axis=2)
+    flipped_h[3, :, 0: 6] = flipped_h[3, :, 1: 7]
+    flipped_h[3, :, 6] = 0
     augmented_planes[4] = flipped_h
     augmented_best_move[4] = transform_move_index(best_move_index, "flip_h")
 
     # Flip horizontally + rotate 90
     flipped_h_rot90 = np.rot90(flipped_h, k=1, axes=(1, 2))
+    flipped_h_rot90[[2, 3]] = flipped_h_rot90[[3, 2]]
+    flipped_h_rot90[2, 0: 6, :] = flipped_h_rot90[2, 1: 7, :]
+    flipped_h_rot90[2, 6, :] = 0
+    flipped_h_rot90[3, :, 0: 6] = flipped_h_rot90[3, :, 1: 7]
+    flipped_h_rot90[3, :, 6] = 0
     augmented_planes[5] = flipped_h_rot90
     augmented_best_move[5] = transform_move_index(
         best_move_index, "flip_h_rot90")
 
     # Flip horizontally + rotate 180
     flipped_h_rot180 = np.rot90(flipped_h, k=2, axes=(1, 2))
+    flipped_h_rot180[2, 0: 6, :] = flipped_h_rot180[2, 1: 7, :]
+    flipped_h_rot180[2, 6, :] = 0
     augmented_planes[6] = flipped_h_rot180
     augmented_best_move[6] = transform_move_index(
         best_move_index, "flip_h_rot180")

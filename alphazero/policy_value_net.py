@@ -70,7 +70,7 @@ class PolicyHead(nn.Module):
     def forward(self, x):
         x = self.conv(x)
         x = self.fc(x.flatten(1))
-        return F.softmax(x, dim=1)
+        return F.log_softmax(x, dim=1)
 
 
 class ValueHead(nn.Module):
@@ -184,3 +184,32 @@ class PolicyValueNet(nn.Module):
         """ 设置神经网络运行设备 """
         self.is_use_gpu = is_use_gpu
         self.device = torch.device('cuda:0' if is_use_gpu else 'cpu')
+
+
+class PolicyValueLoss(nn.Module):
+    """ 根据 self-play 产生的 `z` 和 `π` 计算误差 """
+
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, p_hat, pi, value, z, verbose=False):
+        """ 前馈
+
+        Parameters
+        ----------
+        p_hat: Tensor of shape (N, board_len^2)
+            对数动作概率向量
+
+        pi: Tensor of shape (N, board_len^2)
+            `mcts` 产生的动作概率向量
+
+        value: Tensor of shape (N, )
+            对每个局面的估值
+
+        z: Tensor of shape (N, )
+            最终的游戏结果相对每一个玩家的奖赏
+        """
+        value_loss = F.mse_loss(value, z) * 0.01
+        policy_loss = -torch.sum(pi * p_hat, dim=1).mean()
+        loss = value_loss + policy_loss
+        return loss

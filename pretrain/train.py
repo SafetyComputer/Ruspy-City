@@ -10,8 +10,7 @@ import numpy as np
 import sys,os
 sys.path.append(os.getcwd())
 
-from alphazero import PolicyValueNet
-from alphazero.train import PolicyValueLoss
+from alphazero import PolicyValueNet, PolicyValueLoss
 
 
 class GameDataset(Dataset):
