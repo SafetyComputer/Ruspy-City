@@ -6,7 +6,9 @@ from torch.optim import Adam
 from torch.utils.data import DataLoader, Dataset
 from tqdm import tqdm
 import numpy as np
-import sys
+
+import sys,os
+sys.path.append(os.getcwd())
 
 from alphazero import PolicyValueNet
 from alphazero.train import PolicyValueLoss
@@ -44,7 +46,7 @@ criterion = PolicyValueLoss()
 # self.lr_scheduler = MultiStepLR(self.optimizer, [1500, 2500], gamma=0.1)
 # lr_scheduler = ExponentialLR(optimizer, gamma=0.998)  # 0.998 ** 1000 = 0.135
 
-loaded_data = np.load("../data/processed_data.npz")
+loaded_data = np.load("./data/processed_data.npz")
 
 planes, best_moves, evals = loaded_data['planes'], loaded_data['best_moves'], loaded_data['evals']
 
@@ -124,11 +126,11 @@ for epoch in range(epoch_num):
     loss_history.append(loss.item())
     if (epoch + 1) % save_freq == 0:
         torch.save(policy_value_net,
-                   f"../model/policy_value_net_{epoch + 1}.pth")
-        print(f"Save model to ../model/policy_value_net_{epoch + 1}.pth")
+                   f"./model/policy_value_net_{epoch + 1}.pth")
+        print(f"Save model to ./model/policy_value_net_{epoch + 1}.pth")
 
 
 plt.plot(loss_history)
 plt.savefig("./loss_history.png")
 
-torch.save(policy_value_net, f"../model/policy_value_net.pth")
+torch.save(policy_value_net, f"./model/policy_value_net.pth")
