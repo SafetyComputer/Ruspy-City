@@ -70,7 +70,7 @@ class PolicyHead(nn.Module):
     def forward(self, x):
         x = self.conv(x)
         x = self.fc(x.flatten(1))
-        return F.log_softmax(x, dim=1)
+        return F.softmax(x, dim=1)
 
 
 class ValueHead(nn.Module):
@@ -122,7 +122,7 @@ class PolicyValueNet(nn.Module):
         self.n_feature_planes = n_feature_planes
         self.device = torch.device('cuda:0' if is_use_gpu else 'cpu')
         self.conv = ConvBlock(n_feature_planes, 64, 3, padding=1)
-        self.residues = nn.Sequential(*[ResidueBlock(64, 64) for i in range(8)])
+        self.residues = nn.Sequential(*[ResidueBlock(64, 64) for i in range(4)])
         self.policy_head = PolicyHead(64, board_len, policy_output_dim)
         self.value_head = ValueHead(64, board_len)
         self.to(self.device)

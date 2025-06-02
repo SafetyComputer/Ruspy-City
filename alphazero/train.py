@@ -28,7 +28,7 @@ class PolicyValueLoss(nn.Module):
     def __init__(self):
         super().__init__()
 
-    def forward(self, p_hat, pi, value, z):
+    def forward(self, p_hat, pi, value, z, verbose=False):
         """ 前馈
 
         Parameters
@@ -46,6 +46,6 @@ class PolicyValueLoss(nn.Module):
             最终的游戏结果相对每一个玩家的奖赏
         """
         value_loss = F.mse_loss(value, z)
-        policy_loss = -torch.sum(pi * p_hat, dim=1).mean()
+        policy_loss = 10 -torch.sum(pi * p_hat, dim=1).mean() * 10
         loss = value_loss + policy_loss
         return loss

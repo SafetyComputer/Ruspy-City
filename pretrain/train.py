@@ -38,7 +38,7 @@ policy_value_net = PolicyValueNet(
 # policy_value_net: PolicyValueNet = torch.load("./model/policy_value_net_100.pth")
 
 # 创建优化器和损失函数
-optimizer = Adam(policy_value_net.parameters(), lr=1e-3, weight_decay=1e-4)
+optimizer = Adam(policy_value_net.parameters(), lr=3e-3, weight_decay=0)
 criterion = PolicyValueLoss()
 
 # self.lr_scheduler = MultiStepLR(self.optimizer, [1500, 2500], gamma=0.1)
@@ -69,7 +69,7 @@ for i in range(len(best_moves)):
     f, pi, z = f.to(device).float(), pi.to(
         device).float(), z.to(device).float()
 
-    if i < 20000:
+    if i < 10000:
         test_data_list.append((f, pi, z))
     else:
         train_data_list.append((f, pi, z))
@@ -83,26 +83,30 @@ policy_value_net.train()
 loss_history = []
 
 epoch_num = 500
-save_freq = 100
+save_freq = 50
 
 for epoch in range(epoch_num):
     p_bar = tqdm(enumerate(data_loader, 0), ncols=80,
                  total=len(data_loader), desc=f"Epoch {epoch + 1}")
+
+    if (epoch + 1) % 10 == 0:
+        # Evaluate on test dataset
+        test_dataset = GameDataset(test_data_list)
+        test_loader = DataLoader(test_dataset, batch_size=1000)
+        policy_value_net.eval()
+        total_loss = 0.0
+        with torch.no_grad():
+            for data in test_loader:
+                feature_planes, pi, z = data
+                p_hat, value = policy_value_net(feature_planes)
+                loss = criterion(p_hat, pi, value.flatten(), z, verbose=True)
+                total_loss += loss.item() * feature_planes.size(0)
+            avg_loss = total_loss / len(test_dataset)
+            print(f"Epoch {epoch + 1}, Test Loss: {avg_loss:.4f}")
+        policy_value_net.train()
+
     for i, data in p_bar:
         feature_planes, pi, z = data
-
-        if (epoch + 1) % 10 == 0:
-            # validation
-            policy_value_net.eval()
-            with torch.no_grad():
-                p_hat, value = policy_value_net(feature_planes)
-                loss = criterion(p_hat, pi, value.flatten(), z)
-            p_bar.set_description(f"Epoch {epoch + 1} - Validation")
-            p_bar.set_postfix(loss=loss.item())
-
-            policy_value_net.train()
-            continue
-
         # 前馈
         p_hat, value = policy_value_net(feature_planes)
         # 梯度清零
