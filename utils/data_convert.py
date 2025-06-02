@@ -72,12 +72,12 @@ def convert_board_to_feature_planes(blue_pos, green_pos, hor_wall, ver_wall, blu
     for x in range(7):
         for y in range(6):
             if hor_wall[y][x]:
-                feature_planes[2, x, y] = 1
+                feature_planes[2, y, x] = 1
 
     for x in range(6):
         for y in range(7):
             if ver_wall[y][x]:
-                feature_planes[3, x, y] = 1
+                feature_planes[3, y, x] = 1
 
     feature_planes[4, :, :] = blue_turn
     return feature_planes
@@ -89,14 +89,14 @@ def data_augmentation(feature_planes, best_move_index, eval):
     augmented_planes = np.zeros((8, 5, 7, 7), dtype=np.int8)
     augmented_best_move = np.zeros((8,), dtype=np.int32)
     augmented_eval = np.ones((8,), dtype=np.float32) * \
-        eval  # Assuming eval is a float
+                     eval  # Assuming eval is a float
 
     # Base case - original orientation
     augmented_planes[0] = feature_planes
     augmented_best_move[0] = best_move_index
 
     # Rotate 90 degrees
-    rotated_90 = np.rot90(feature_planes, k=1, axes=(1, 2))
+    rotated_90 = np.rot90(feature_planes, k=-1, axes=(1, 2)).copy()
     rotated_90[[2, 3]] = rotated_90[[3, 2]]
     rotated_90[3, :, 0: 6] = rotated_90[3, :, 1: 7]
     rotated_90[3, :, 6] = 0
@@ -104,16 +104,16 @@ def data_augmentation(feature_planes, best_move_index, eval):
     augmented_best_move[1] = transform_move_index(best_move_index, "rot90")
 
     # Rotate 180 degrees
-    rotated_180 = np.rot90(feature_planes, k=2, axes=(1, 2))
-    rotated_90[3, :, 0: 6] = rotated_90[3, :, 1: 7]
-    rotated_90[3, :, 6] = 0
+    rotated_180 = np.rot90(feature_planes, k=-2, axes=(1, 2)).copy()
+    rotated_180[3, :, 0: 6] = rotated_180[3, :, 1: 7]
+    rotated_180[3, :, 6] = 0
     rotated_180[2, 0: 6, :] = rotated_180[2, 1: 7, :]
     rotated_180[2, 6, :] = 0
     augmented_planes[2] = rotated_180
     augmented_best_move[2] = transform_move_index(best_move_index, "rot180")
 
     # Rotate 270 degrees
-    rotated_270 = np.rot90(feature_planes, k=3, axes=(1, 2))
+    rotated_270 = np.rot90(feature_planes, k=-3, axes=(1, 2)).copy()
     rotated_270[[2, 3]] = rotated_270[[3, 2]]
     rotated_270[2, 0: 6, :] = rotated_270[2, 1: 7, :]
     rotated_270[2, 6, :] = 0
@@ -121,14 +121,15 @@ def data_augmentation(feature_planes, best_move_index, eval):
     augmented_best_move[3] = transform_move_index(best_move_index, "rot270")
 
     # Flip horizontally
-    flipped_h = np.flip(feature_planes, axis=2)
-    flipped_h[3, :, 0: 6] = flipped_h[3, :, 1: 7]
-    flipped_h[3, :, 6] = 0
-    augmented_planes[4] = flipped_h
+    flipped_h = np.flip(feature_planes, axis=2).copy()
+    flipped_h_rot0 = flipped_h.copy()
+    flipped_h_rot0[3, :, 0: 6] = flipped_h_rot0[3, :, 1: 7]
+    flipped_h_rot0[3, :, 6] = 0
+    augmented_planes[4] = flipped_h_rot0
     augmented_best_move[4] = transform_move_index(best_move_index, "flip_h")
 
     # Flip horizontally + rotate 90
-    flipped_h_rot90 = np.rot90(flipped_h, k=1, axes=(1, 2))
+    flipped_h_rot90 = np.rot90(flipped_h, k=-1, axes=(1, 2)).copy()
     flipped_h_rot90[[2, 3]] = flipped_h_rot90[[3, 2]]
     flipped_h_rot90[2, 0: 6, :] = flipped_h_rot90[2, 1: 7, :]
     flipped_h_rot90[2, 6, :] = 0
@@ -139,7 +140,7 @@ def data_augmentation(feature_planes, best_move_index, eval):
         best_move_index, "flip_h_rot90")
 
     # Flip horizontally + rotate 180
-    flipped_h_rot180 = np.rot90(flipped_h, k=2, axes=(1, 2))
+    flipped_h_rot180 = np.rot90(flipped_h, k=-2, axes=(1, 2)).copy()
     flipped_h_rot180[2, 0: 6, :] = flipped_h_rot180[2, 1: 7, :]
     flipped_h_rot180[2, 6, :] = 0
     augmented_planes[6] = flipped_h_rot180
@@ -147,7 +148,7 @@ def data_augmentation(feature_planes, best_move_index, eval):
         best_move_index, "flip_h_rot180")
 
     # Flip horizontally + rotate 270
-    flipped_h_rot270 = np.rot90(flipped_h, k=3, axes=(1, 2))
+    flipped_h_rot270 = np.rot90(flipped_h, k=-3, axes=(1, 2)).copy()
     augmented_planes[7] = flipped_h_rot270
     augmented_best_move[7] = transform_move_index(
         best_move_index, "flip_h_rot270")
@@ -160,50 +161,78 @@ def transform_wall_direction(wall, transformation):
 
     if transformation == "rot90":
         match wall:
-            case 0: return 3
-            case 1: return 2
-            case 2: return 0
-            case 3: return 1
+            case 0:
+                return 3
+            case 1:
+                return 2
+            case 2:
+                return 0
+            case 3:
+                return 1
     elif transformation == "rot180":
         match wall:
-            case 0: return 1
-            case 1: return 0
-            case 2: return 3
-            case 3: return 2
+            case 0:
+                return 1
+            case 1:
+                return 0
+            case 2:
+                return 3
+            case 3:
+                return 2
     elif transformation == "rot270":
         match wall:
-            case 0: return 2
-            case 1: return 3
-            case 2: return 1
-            case 3: return 0
+            case 0:
+                return 2
+            case 1:
+                return 3
+            case 2:
+                return 1
+            case 3:
+                return 0
 
     elif transformation == "flip_h":
         match wall:
-            case 0: return 0
-            case 1: return 1
-            case 2: return 3
-            case 3: return 2
+            case 0:
+                return 0
+            case 1:
+                return 1
+            case 2:
+                return 3
+            case 3:
+                return 2
 
     elif transformation == "flip_h_rot90":
         match wall:
-            case 0: return 3
-            case 1: return 2
-            case 2: return 1
-            case 3: return 0
+            case 0:
+                return 3
+            case 1:
+                return 2
+            case 2:
+                return 1
+            case 3:
+                return 0
 
     elif transformation == "flip_h_rot180":
         match wall:
-            case 0: return 1
-            case 1: return 0
-            case 2: return 2
-            case 3: return 3
+            case 0:
+                return 1
+            case 1:
+                return 0
+            case 2:
+                return 2
+            case 3:
+                return 3
 
     elif transformation == "flip_h_rot270":
         match wall:
-            case 0: return 2
-            case 1: return 3
-            case 2: return 0
-            case 3: return 1
+            case 0:
+                return 2
+            case 1:
+                return 3
+            case 2:
+                return 0
+            case 3:
+                return 1
 
 
 def transform_pos(pos, transformation):
@@ -259,9 +288,9 @@ def parse_dict(data):
     return augmented_planes, augmented_best_move, augmented_eval
 
 
-if __name__ == "__main__":
+def main():
     # get all json files in the log directory
-    log_dir = "../log"  # Adjust this path to your logs directory
+    log_dir = "./log"  # Adjust this path to your logs directory
     json_files = [os.path.join(log_dir, f)
                   for f in os.listdir(log_dir) if f.endswith('.json')]
     results = []
@@ -293,9 +322,20 @@ if __name__ == "__main__":
     print(f"Evals shape: {evals.shape}")
 
     # Save the results to a .npz file
-    output_file = "../data/processed_data.npz"
+    output_file = "./data/processed_data.npz"
     np.savez(output_file, planes=planes, best_moves=best_moves, evals=evals)
 
     # # load the data back
     # loaded_data = np.load(output_file)
     # planes, best_moves, evals = loaded_data['planes'], loaded_data['best_moves'], loaded_data['evals']
+
+
+if __name__ == "__main__":
+    main()
+    # planes = np.zeros((5, 7, 7), dtype=np.int8)
+    # planes[2, 0:6, :] = 1
+    # planes[3, :, 0:6] = 2
+    #
+    # augmented_planes, _, _ = data_augmentation(planes, 0, 0.5)
+    #
+    # print(augmented_planes[:, [2, 3]])
