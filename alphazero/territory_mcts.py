@@ -106,16 +106,16 @@ class TerritoryMCTS:
                 score = 0
 
         else:
-            active_player = 0 if chess_board.state[12, 0, 0] == 0 else 3
+            active_player = 0 if chess_board.state[4, 0, 0] == 1 else 1
 
             active_player_distance = chess_board.distance(chess_board.state[active_player],
-                                                          chess_board.state[3 - active_player],
-                                                          chess_board.state[6],
-                                                          chess_board.state[9])
-            inactive_player_distance = chess_board.distance(chess_board.state[3 - active_player],
+                                                          chess_board.state[1 - active_player],
+                                                          chess_board.state[2],
+                                                          chess_board.state[3])
+            inactive_player_distance = chess_board.distance(chess_board.state[1 - active_player],
                                                             chess_board.state[active_player],
-                                                            chess_board.state[6],
-                                                            chess_board.state[9])
+                                                            chess_board.state[2],
+                                                            chess_board.state[3])
             active_player_terr = 0
             inactive_player_terr = 0
             all_terr = chess_board.board_len ** 2  # 所有格子数

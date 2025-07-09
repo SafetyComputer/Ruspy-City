@@ -46,7 +46,8 @@ impl PyMove {
 }
 
 fn pos_to_action(pos: (i32, i32)) -> i32 {
-    match pos {
+    let rev = (pos.1, pos.0);
+    match rev {
         (-3, 0) => 0,
         (-2, -1)=> 1, (-2, 0)=> 2, (-2, 1)=> 3,
         (-1, -2)=> 4, (-1, -1)=> 5, (-1, 0)=> 6, (-1, 1)=> 7, (-1, 2)=> 8,
@@ -59,7 +60,7 @@ fn pos_to_action(pos: (i32, i32)) -> i32 {
 }
 
 fn action_to_pos(action: i32) -> (i32, i32) {
-    match action {
+    let result = match action {
         0=> (-3, 0),
         1=> (-2, -1), 2=> (-2, 0), 3=> (-2, 1),
         4=> (-1, -2), 5=> (-1, -1), 6=> (-1, 0), 7=> (-1, 1), 8=> (-1, 2),
@@ -68,7 +69,8 @@ fn action_to_pos(action: i32) -> (i32, i32) {
         21=> (2, -1), 22=> (2, 0), 23=> (2, 1),
         24=> (3, 0),
         _ => panic!("action out of range")
-    }
+    };
+    (result.1, result.0)
 }
 
 #[pyclass(name = "Game")]
@@ -229,10 +231,10 @@ impl PyGame {
         let mv = action / 4;
         let wall = action % 4;
         let place_wall = match wall {
-            1 => Direction::Up,
-            3 => Direction::Down,
-            0 => Direction::Left,
-            2 => Direction::Right,
+            0 => Direction::Up,
+            2 => Direction::Down,
+            1 => Direction::Left,
+            3 => Direction::Right,
             _ => panic!("impossible")
         };
         let relative = action_to_pos(mv);
@@ -266,8 +268,8 @@ impl PyGame {
     }
 
     fn get_player_pos(&mut self) -> ((i32, i32), (i32, i32)) {
-        let blue_position = self.inner.blue_position.to_tuple();
-        let green_position = self.inner.green_position.to_tuple();
+        let blue_position = (self.inner.blue_position.y, self.inner.blue_position.x);
+        let green_position = (self.inner.green_position.y, self.inner.green_position.x);
         (blue_position, green_position)
     }
 
@@ -282,10 +284,10 @@ impl PyGame {
             .iter()
             .map(|mv| {
                 let dir = match mv.place_wall {
-                    Direction::Up => 1,
-                    Direction::Left => 0,
-                    Direction::Down => 3,
-                    Direction::Right => 2
+                    Direction::Up => 0,
+                    Direction::Left => 1,
+                    Direction::Down => 2,
+                    Direction::Right => 3
                 };
                 let relative = (mv.destination.x - start.x, mv.destination.y - start.y);
                 pos_to_action(relative) * 4 + dir
@@ -360,7 +362,7 @@ impl Board<bool> {
             for x in 0..self.board_matrix[y].len() {
                 unsafe {
                     if *self.board_matrix.get_unchecked(y).get_unchecked(x) {
-                        result.push((x as i32, y as i32));
+                        result.push((y as i32, x as i32));
                     }
                 }
             }
@@ -920,35 +922,6 @@ impl Game {
         territory_diff
     }
 
-    fn convert_current_position(&self) -> u128 {
-        // convert the current position to a unique u128 value
-        let mut value: u128 = 0;
-        value |= (self.blue_position.x as u128) << 112;
-        value |= (self.blue_position.y as u128) << 104;
-        value |= (self.green_position.x as u128) << 96;
-        value |= (self.green_position.y as u128) << 88;
-
-        for x in 0..self.width {
-            for y in 0..self.height - 1 {
-                let cell = self.horizontal_walls.get(Coordinate::new(x, y));
-                if !cell.is_empty() {
-                    value |= (1u128 << (x + y * self.width)) << 42;
-                }
-            }
-        }
-
-        for x in 0..self.width - 1 {
-            for y in 0..self.height {
-                let cell = self.vertical_walls.get(Coordinate::new(x, y));
-                if !cell.is_empty() {
-                    value |= (1u128 << (x + y * self.width)) << 0;
-                }
-            }
-        }
-
-        value
-    }
-
     fn minimax_evaluate(
         &mut self,
         depth: i32,
@@ -1005,29 +978,6 @@ impl Game {
             }
         }
         value
-    }
-
-    fn minimax_best_move(&mut self, depth: i32, cutoff: i32) -> Move {
-        let mut node_evaluated = 0u64;
-        let start = time::Instant::now();
-        let evaluated_moves = self.minimax_evaluate_moves(depth, &mut node_evaluated);
-        // diagnostics
-        println!("Top 5 moves:");
-        for em in evaluated_moves.iter().take(5) {
-            println!("  {:?}", em);
-        }
-        println!("Total nodes evaluated: {}", node_evaluated);
-        println!("Time elapsed: {:?}", start.elapsed());
-
-        // pick randomly among best‐scoring
-        let best_score = evaluated_moves[0].ev;
-        let best_moves: Vec<Move> = evaluated_moves
-            .iter()
-            .filter(|em| em.ev == best_score)
-            .map(|em| em.mv)
-            .collect();
-        let mut rng = rand::rng();
-        best_moves[rng.random_range(0..best_moves.len())]
     }
 
     fn minimax_evaluate_moves(&mut self, depth: i32, nodes: &mut u64) -> Vec<EvaluatedMove> {

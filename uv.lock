@@ -3111,7 +3111,7 @@ wheels = [
 
 [[package]]
 name = "ruspy-city"
-version = "0.2.6"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "matplotlib" },

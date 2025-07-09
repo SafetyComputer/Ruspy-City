@@ -82,8 +82,8 @@ class MaxTerritory(Robot):
         return 1 if my_distance < enemy_distance else 0 if my_distance > enemy_distance else 0.5
 
     def get_action_scores(self):
-        active_player_pos_index = 0 if self.board.state[4, 0, 0] == 0 else 3
-        inactive_player_pos_index = 3 - active_player_pos_index
+        active_player_pos_index = 0 if self.board.state[4, 0, 0] == 1 else 1
+        inactive_player_pos_index = 1 - active_player_pos_index
 
         all_scores = []
 
@@ -106,11 +106,11 @@ class MaxTerritory(Robot):
             else:
                 active_player_distance = self.board.distance(board.state[active_player_pos_index],
                                                              board.state[inactive_player_pos_index],
-                                                             board.state[6],
-                                                             board.state[9])
+                                                             board.state[2],
+                                                             board.state[3])
                 inactive_player_distance = self.board.distance(board.state[inactive_player_pos_index],
                                                                board.state[active_player_pos_index],
-                                                               board.state[6],
+                                                               board.state[2],
                                                                board.state[9])
 
                 for i in range(self.board.board_len):
@@ -210,16 +210,16 @@ class MaxPercentSigmoidTerritory(MaxSigmoidTerritory):
                     score = 0
 
             else:
-                active_player = 0 if self.board.state[4, 0, 0] == 0 else 3
+                active_player = 0 if self.board.state[4, 0, 0] == 1 else 1
 
                 active_player_distance = self.board.distance(board.state[active_player],
-                                                             board.state[3 - active_player],
-                                                             board.state[6],
-                                                             board.state[9])
-                inactive_player_distance = self.board.distance(board.state[3 - active_player],
+                                                             board.state[1 - active_player],
+                                                             board.state[2],
+                                                             board.state[3])
+                inactive_player_distance = self.board.distance(board.state[1 - active_player],
                                                                board.state[active_player],
-                                                               board.state[6],
-                                                               board.state[9])
+                                                               board.state[2],
+                                                               board.state[3])
                 active_player_terr = 0
                 inactive_player_terr = 0
                 all_terr = self.board.board_len ** 2  # 所有格子数
@@ -279,16 +279,16 @@ class MaxDiffSigmoidTerritory(MaxSigmoidTerritory):
                     score = 0
 
             else:
-                active_player = 0 if self.board.state[4, 0, 0] == 0 else 3
+                active_player = 0 if self.board.state[4, 0, 0] == 1 else 1
 
                 active_player_distance = self.board.distance(board.state[active_player],
-                                                             board.state[3 - active_player],
-                                                             board.state[6],
-                                                             board.state[9])
-                inactive_player_distance = self.board.distance(board.state[3 - active_player],
+                                                             board.state[1 - active_player],
+                                                             board.state[2],
+                                                             board.state[3])
+                inactive_player_distance = self.board.distance(board.state[1 - active_player],
                                                                board.state[active_player],
-                                                               board.state[6],
-                                                               board.state[9])
+                                                               board.state[2],
+                                                               board.state[3])
                 active_player_terr = 0
                 inactive_player_terr = 0
                 all_terr = self.board.board_len ** 2  # 所有格子数
