@@ -6,6 +6,6 @@ if __name__ == "__main__":
     
     game = Game(7, 7)
     game.print()
-    game.make_move(Move.from_notation("b3L"), True)
-    game.print()
-    print(game.get_state_planes())
+    result = game.get_available_actions()
+    result.sort()
+    print(result)

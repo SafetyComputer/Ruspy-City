@@ -45,6 +45,32 @@ impl PyMove {
     }
 }
 
+fn pos_to_action(pos: (i32, i32)) -> i32 {
+    match pos {
+        (-3, 0) => 0,
+        (-2, -1)=> 1, (-2, 0)=> 2, (-2, 1)=> 3,
+        (-1, -2)=> 4, (-1, -1)=> 5, (-1, 0)=> 6, (-1, 1)=> 7, (-1, 2)=> 8,
+        (0, -3)=> 9, (0, -2)=> 10, (0, -1)=> 11, (0, 0)=> 12, (0, 1)=> 13, (0, 2)=> 14, (0, 3)=> 15,
+        (1, -2)=> 16, (1, -1)=> 17, (1, 0)=> 18, (1, 1)=> 19, (1, 2)=> 20,
+        (2, -1)=> 21, (2, 0)=> 22, (2, 1)=> 23,
+        (3, 0)=> 24,
+        _ => panic!("pos out of range")
+    }
+}
+
+fn action_to_pos(action: i32) -> (i32, i32) {
+    match action {
+        0=> (-3, 0),
+        1=> (-2, -1), 2=> (-2, 0), 3=> (-2, 1),
+        4=> (-1, -2), 5=> (-1, -1), 6=> (-1, 0), 7=> (-1, 1), 8=> (-1, 2),
+        9=> (0, -3), 10=> (0, -2), 11=> (0, -1), 12=> (0, 0), 13=> (0, 1), 14=> (0, 2), 15=> (0, 3),
+        16=> (1, -2), 17=> (1, -1), 18=> (1, 0), 19=> (1, 1), 20=> (1, 2),
+        21=> (2, -1), 22=> (2, 0), 23=> (2, 1),
+        24=> (3, 0),
+        _ => panic!("action out of range")
+    }
+}
+
 #[pyclass(name = "Game")]
 struct PyGame {
     inner: Game,
@@ -187,6 +213,85 @@ impl PyGame {
     fn play_against_minimax(width: i32, height: i32, human_first: bool) {
         Game::play_against_minimax(width, height, human_first);
     }
+
+    fn clear_board(&mut self) {
+        while self.inner.history.len() > 0 {
+            self.inner.undo_move();
+        }
+    }
+
+    fn do_action(&mut self, action: i32, safe: bool) -> bool {
+        let start = if self.inner.blue_turn {
+            self.inner.blue_position
+        } else {
+            self.inner.green_position
+        };
+        let mv = action / 4;
+        let wall = action % 4;
+        let place_wall = match wall {
+            1 => Direction::Up,
+            3 => Direction::Down,
+            0 => Direction::Left,
+            2 => Direction::Right,
+            _ => panic!("impossible")
+        };
+        let relative = action_to_pos(mv);
+        let destination = Coordinate::new(start.x + relative.0, start.y + relative.1);
+        let move_obj = Move::new(destination, place_wall);
+        self.inner.make_move(move_obj, safe)
+    }
+
+    fn is_game_over(&mut self) -> (bool, Option<i32>) {
+        if self.inner.game_over() {
+            let (winner, _) = self.inner.game_result();
+            match winner {
+                Winner::Blue => (true, Option::Some(0)),
+                Winner::Green => (true, Option::Some(1)),
+                Winner::Draw => (true, Option::None)
+            }
+        } else {
+            (false, Option::Some(-1))
+        }
+    }
+
+    fn is_game_over_(&mut self) -> (bool, Option<Vec<(i32, i32)>>, Option<Vec<(i32, i32)>>) {
+        if self.inner.game_over() {
+            let blue_territory = self.inner.blue_reachable_cache.to_cor();
+            self.inner.reachable_with_cache(self.inner.green_position, self.inner.height * self.inner.height, true);
+            let green_territory = self.inner.green_reachable_cache.to_cor();
+            (true, Option::Some(blue_territory), Option::Some(green_territory))
+        } else {
+            (false, Option::None, Option::None)
+        }
+    }
+
+    fn get_player_pos(&mut self) -> ((i32, i32), (i32, i32)) {
+        let blue_position = self.inner.blue_position.to_tuple();
+        let green_position = self.inner.green_position.to_tuple();
+        (blue_position, green_position)
+    }
+
+    fn get_available_actions(&mut self) -> Vec<i32> {
+        let start = if self.inner.blue_turn {
+            self.inner.blue_position
+        } else {
+            self.inner.green_position
+        };
+        self.inner
+            .possible_moves()
+            .iter()
+            .map(|mv| {
+                let dir = match mv.place_wall {
+                    Direction::Up => 1,
+                    Direction::Left => 0,
+                    Direction::Down => 3,
+                    Direction::Right => 2
+                };
+                let relative = (mv.destination.x - start.x, mv.destination.y - start.y);
+                pos_to_action(relative) * 4 + dir
+            })
+            .collect()
+    }
 }
 
 #[pymodule]
@@ -248,6 +353,19 @@ impl<T: Copy> Board<T> {
 impl Board<bool> {
     fn total(&self) -> usize {
         self.board_matrix.iter().flatten().filter(|&&x| x).count()
+    }
+    fn to_cor(&self) -> Vec<(i32, i32)> {
+        let mut result = Vec::<(i32, i32)>::new();
+        for y in 0..self.board_matrix.len() {
+            for x in 0..self.board_matrix[y].len() {
+                unsafe {
+                    if *self.board_matrix.get_unchecked(y).get_unchecked(x) {
+                        result.push((x as i32, y as i32));
+                    }
+                }
+            }
+        }
+        result
     }
     fn clean(&mut self) {
         for i in self.board_matrix.iter_mut() {

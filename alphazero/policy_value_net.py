@@ -3,6 +3,8 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from .chess_board import ChessBoard
+
 
 class ConvBlock(nn.Module):
     """ 卷积块 """
@@ -61,11 +63,7 @@ class PolicyHead(nn.Module):
         self.board_len = board_len
         self.in_channels = in_channels
         self.conv = ConvBlock(in_channels, 2, 1)
-        self.fc = nn.Sequential(
-            nn.Linear(2 * board_len ** 2, 128),
-            nn.ReLU(),
-            nn.Linear(128, output_dim)
-        )
+        self.fc = nn.Linear(2 * board_len ** 2, output_dim)
 
     def forward(self, x):
         x = self.conv(x)
@@ -89,9 +87,9 @@ class ValueHead(nn.Module):
         super().__init__()
         self.in_channels = in_channels
         self.board_len = board_len
-        self.conv = ConvBlock(in_channels, 2, kernel_size=1)
+        self.conv = ConvBlock(in_channels, 1, kernel_size=1)
         self.fc = nn.Sequential(
-            nn.Linear(board_len ** 2 * 2, 128),
+            nn.Linear(board_len ** 2, 128),
             nn.ReLU(),
             nn.Linear(128, 1),
             nn.Tanh()
@@ -121,10 +119,10 @@ class PolicyValueNet(nn.Module):
         self.is_use_gpu = is_use_gpu
         self.n_feature_planes = n_feature_planes
         self.device = torch.device('cuda:0' if is_use_gpu else 'cpu')
-        self.conv = ConvBlock(n_feature_planes, 64, 3, padding=1)
-        self.residues = nn.Sequential(*[ResidueBlock(64, 64) for i in range(4)])
-        self.policy_head = PolicyHead(64, board_len, policy_output_dim)
-        self.value_head = ValueHead(64, board_len)
+        self.conv = ConvBlock(n_feature_planes, 32, 3, padding=1)
+        self.residues = nn.Sequential(*[ResidueBlock(32, 32) for i in range(4)])
+        self.policy_head = PolicyHead(32, board_len, policy_output_dim)
+        self.value_head = ValueHead(32, board_len)
         self.to(self.device)
 
     def forward(self, x):
@@ -149,67 +147,38 @@ class PolicyValueNet(nn.Module):
         value = self.value_head(x)
         return p_hat, value
 
-    # def predict(self, chess_board: ChessBoard):
-    #     """ 获取当前局面上所有可用 `action` 和他对应的先验概率 `P(s, a)`，以及局面的 `value`
-    #
-    #     Parameters
-    #     ----------
-    #     chess_board: ChessBoard
-    #         棋盘
-    #
-    #     Returns
-    #     -------
-    #     probs: `np.ndarray` of shape `(len(chess_board.available_actions), )`
-    #         当前局面上所有可用 `action` 对应的先验概率 `P(s, a)`
-    #
-    #     value: float
-    #         当前局面的估值
-    #     """
-    #     feature_planes = chess_board.get_feature_planes().to(self.device)
-    #     feature_planes.unsqueeze_(0)
-    #     p_hat, value = self.forward(feature_planes)
-    #
-    #     # 将对数概率转换为概率
-    #     p = torch.exp(p_hat).flatten()
-    #
-    #     # 只取可行的落点
-    #     if self.is_use_gpu:
-    #         p = p[chess_board.available_actions].cpu().detach().numpy()
-    #     else:
-    #         p = p[chess_board.available_actions].detach().numpy()
-    #
-    #     return p, value[0].item()
+    def predict(self, chess_board: ChessBoard):
+        """ 获取当前局面上所有可用 `action` 和他对应的先验概率 `P(s, a)`，以及局面的 `value`
+
+        Parameters
+        ----------
+        chess_board: ChessBoard
+            棋盘
+
+        Returns
+        -------
+        probs: `np.ndarray` of shape `(len(chess_board.available_actions), )`
+            当前局面上所有可用 `action` 对应的先验概率 `P(s, a)`
+
+        value: float
+            当前局面的估值
+        """
+        feature_planes = chess_board.get_feature_planes().to(self.device)
+        feature_planes.unsqueeze_(0)
+        p_hat, value = self.forward(feature_planes)
+
+        # 将对数概率转换为概率
+        p = torch.exp(p_hat).flatten()
+
+        # 只取可行的落点
+        if self.is_use_gpu:
+            p = p[chess_board.available_actions].cpu().detach().numpy()
+        else:
+            p = p[chess_board.available_actions].detach().numpy()
+
+        return p, value[0].item()
 
     def set_device(self, is_use_gpu: bool):
         """ 设置神经网络运行设备 """
         self.is_use_gpu = is_use_gpu
         self.device = torch.device('cuda:0' if is_use_gpu else 'cpu')
-
-
-class PolicyValueLoss(nn.Module):
-    """ 根据 self-play 产生的 `z` 和 `π` 计算误差 """
-
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, p_hat, pi, value, z, verbose=False):
-        """ 前馈
-
-        Parameters
-        ----------
-        p_hat: Tensor of shape (N, board_len^2)
-            对数动作概率向量
-
-        pi: Tensor of shape (N, board_len^2)
-            `mcts` 产生的动作概率向量
-
-        value: Tensor of shape (N, )
-            对每个局面的估值
-
-        z: Tensor of shape (N, )
-            最终的游戏结果相对每一个玩家的奖赏
-        """
-        value_loss = F.mse_loss(value, z) * 0.01
-        policy_loss = -torch.sum(pi * p_hat, dim=1).mean()
-        loss = value_loss + policy_loss
-        return loss
