@@ -1,12 +1,11 @@
 [project]
 name = "ruspy-city"
-version = "1.1.0"
+version = "1.1.1"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "matplotlib>=3.10.3",
-    "maturin>=1.8.6",
     "numpy>=2.2.6",
     "pyinstaller>=6.14.2",
     "pyside6>=6.9.1",
@@ -30,7 +29,12 @@ default = true
 
 [[tool.uv.index]]
 name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
+url = "https://mirror.sjtu.edu.cn/pytorch-wheels/cu128"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://mirror.sjtu.edu.cn/pytorch-wheels/cpu"
 explicit = true
 
 [build-system]
