@@ -102,6 +102,8 @@ class PlayInterface(QWidget):
                    triggered=lambda: self.onAddRobotTab("Max Diff Sigmoid Territory")),
             Action(FluentIcon.ROBOT, 'Max Percent Sigmoid Territory',
                    triggered=lambda: self.onAddRobotTab("Max Percent Sigmoid Territory")),
+            Action(FluentIcon.ROBOT, 'MiniMax',
+                   triggered=lambda: self.onAddRobotTab("MiniMax")),
         ])
 
         self.menu.addMenu(submenu)

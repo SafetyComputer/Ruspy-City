@@ -49,26 +49,62 @@ fn pos_to_action(pos: (i32, i32)) -> i32 {
     let rev = (pos.1, pos.0);
     match rev {
         (-3, 0) => 0,
-        (-2, -1)=> 1, (-2, 0)=> 2, (-2, 1)=> 3,
-        (-1, -2)=> 4, (-1, -1)=> 5, (-1, 0)=> 6, (-1, 1)=> 7, (-1, 2)=> 8,
-        (0, -3)=> 9, (0, -2)=> 10, (0, -1)=> 11, (0, 0)=> 12, (0, 1)=> 13, (0, 2)=> 14, (0, 3)=> 15,
-        (1, -2)=> 16, (1, -1)=> 17, (1, 0)=> 18, (1, 1)=> 19, (1, 2)=> 20,
-        (2, -1)=> 21, (2, 0)=> 22, (2, 1)=> 23,
-        (3, 0)=> 24,
-        _ => panic!("pos out of range")
+        (-2, -1) => 1,
+        (-2, 0) => 2,
+        (-2, 1) => 3,
+        (-1, -2) => 4,
+        (-1, -1) => 5,
+        (-1, 0) => 6,
+        (-1, 1) => 7,
+        (-1, 2) => 8,
+        (0, -3) => 9,
+        (0, -2) => 10,
+        (0, -1) => 11,
+        (0, 0) => 12,
+        (0, 1) => 13,
+        (0, 2) => 14,
+        (0, 3) => 15,
+        (1, -2) => 16,
+        (1, -1) => 17,
+        (1, 0) => 18,
+        (1, 1) => 19,
+        (1, 2) => 20,
+        (2, -1) => 21,
+        (2, 0) => 22,
+        (2, 1) => 23,
+        (3, 0) => 24,
+        _ => panic!("pos out of range"),
     }
 }
 
 fn action_to_pos(action: i32) -> (i32, i32) {
     let result = match action {
-        0=> (-3, 0),
-        1=> (-2, -1), 2=> (-2, 0), 3=> (-2, 1),
-        4=> (-1, -2), 5=> (-1, -1), 6=> (-1, 0), 7=> (-1, 1), 8=> (-1, 2),
-        9=> (0, -3), 10=> (0, -2), 11=> (0, -1), 12=> (0, 0), 13=> (0, 1), 14=> (0, 2), 15=> (0, 3),
-        16=> (1, -2), 17=> (1, -1), 18=> (1, 0), 19=> (1, 1), 20=> (1, 2),
-        21=> (2, -1), 22=> (2, 0), 23=> (2, 1),
-        24=> (3, 0),
-        _ => panic!("action out of range")
+        0 => (-3, 0),
+        1 => (-2, -1),
+        2 => (-2, 0),
+        3 => (-2, 1),
+        4 => (-1, -2),
+        5 => (-1, -1),
+        6 => (-1, 0),
+        7 => (-1, 1),
+        8 => (-1, 2),
+        9 => (0, -3),
+        10 => (0, -2),
+        11 => (0, -1),
+        12 => (0, 0),
+        13 => (0, 1),
+        14 => (0, 2),
+        15 => (0, 3),
+        16 => (1, -2),
+        17 => (1, -1),
+        18 => (1, 0),
+        19 => (1, 1),
+        20 => (1, 2),
+        21 => (2, -1),
+        22 => (2, 0),
+        23 => (2, 1),
+        24 => (3, 0),
+        _ => panic!("action out of range"),
     };
     (result.1, result.0)
 }
@@ -235,7 +271,7 @@ impl PyGame {
             2 => Direction::Down,
             1 => Direction::Left,
             3 => Direction::Right,
-            _ => panic!("impossible")
+            _ => panic!("impossible"),
         };
         let relative = action_to_pos(mv);
         let destination = Coordinate::new(start.x + relative.0, start.y + relative.1);
@@ -249,7 +285,7 @@ impl PyGame {
             match winner {
                 Winner::Blue => (true, Option::Some(0)),
                 Winner::Green => (true, Option::Some(1)),
-                Winner::Draw => (true, Option::None)
+                Winner::Draw => (true, Option::None),
             }
         } else {
             (false, Option::Some(-1))
@@ -259,9 +295,17 @@ impl PyGame {
     fn is_game_over_(&mut self) -> (bool, Option<Vec<(i32, i32)>>, Option<Vec<(i32, i32)>>) {
         if self.inner.game_over() {
             let blue_territory = self.inner.blue_reachable_cache.to_cor();
-            self.inner.reachable_with_cache(self.inner.green_position, self.inner.height * self.inner.height, true);
+            self.inner.reachable_with_cache(
+                self.inner.green_position,
+                self.inner.height * self.inner.height,
+                true,
+            );
             let green_territory = self.inner.green_reachable_cache.to_cor();
-            (true, Option::Some(blue_territory), Option::Some(green_territory))
+            (
+                true,
+                Option::Some(blue_territory),
+                Option::Some(green_territory),
+            )
         } else {
             (false, Option::None, Option::None)
         }
@@ -287,12 +331,28 @@ impl PyGame {
                     Direction::Up => 0,
                     Direction::Left => 1,
                     Direction::Down => 2,
-                    Direction::Right => 3
+                    Direction::Right => 3,
                 };
                 let relative = (mv.destination.x - start.x, mv.destination.y - start.y);
                 pos_to_action(relative) * 4 + dir
             })
             .collect()
+    }
+
+    fn minimax_best_move(&mut self) -> i32 {
+        let start = if self.inner.blue_turn {
+            self.inner.blue_position
+        } else {
+            self.inner.green_position
+        };
+        let mv = self.inner.iterative_deepening_minimax(2).mv;
+        let dir = match mv.place_wall {
+            Direction::Up => 0,
+            Direction::Left => 1,
+            Direction::Down => 2,
+            Direction::Right => 3,
+        };
+        pos_to_action((mv.destination.x - start.x, mv.destination.y - start.y)) * 4 + dir
     }
 }
 
@@ -1324,12 +1384,7 @@ impl Game {
         winner
     }
 
-    pub fn multithread_self_play(
-        width: i32,
-        height: i32,
-        num_threads: i32,
-        max_games: i32,
-    ) {
+    pub fn multithread_self_play(width: i32, height: i32, num_threads: i32, max_games: i32) {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(num_threads as usize)
             .build()

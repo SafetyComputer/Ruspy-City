@@ -585,6 +585,8 @@ class BoardWidget(CardWidget):
             self.robot = MaxDiffSigmoidTerritory(self.board, K=2, B=2)
         elif text == "Max Percent Sigmoid Territory":
             self.robot = MaxPercentSigmoidTerritory(self.board, K=2, B=2)
+        elif text == "MiniMax":
+            self.robot = MiniMax(self.board)
 
     def onEnableMCTS(self):
         self.aiThread = AIThread(
