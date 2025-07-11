@@ -61,6 +61,10 @@ class BoardWidget(CardWidget):
         self.isAIThinking = False
         self.stateTooltip = None
 
+        self.minimax_enabled = False
+        self.minimaxThread = None
+        self.isMinimaxSearching = False
+
         self.blue_final_territory = []
         self.green_final_territory = []
 
@@ -96,7 +100,7 @@ class BoardWidget(CardWidget):
             self.drawPlayers(painter)
             self.drawActivePlayer(painter)
 
-            if not self.isAIThinking:
+            if not (self.isAIThinking or self.isMinimaxSearching):
                 self.drawActionPreview(painter)
         else:
             self.drawFinalTerritory(painter)
@@ -455,7 +459,7 @@ class BoardWidget(CardWidget):
         if event.buttons() == Qt.LeftButton:
             if not self.running:
                 return
-            if self.isAIThinking:
+            if self.isAIThinking or self.isMinimaxSearching:
                 return
 
             action = self.mouse_pos_to_action(event.x(), event.y())
@@ -467,6 +471,8 @@ class BoardWidget(CardWidget):
                     self.robotMove()
                 if self.MCTS_enabled:
                     self.nnMove()
+                if self.minimax_enabled:
+                    self.minimaxMove()
 
     def refreshBoard(self):
         self.board.clear_board()
@@ -480,7 +486,7 @@ class BoardWidget(CardWidget):
         self.update()
 
     def onRestart(self):
-        if self.isAIThinking:
+        if self.isAIThinking or self.isMinimaxSearching:
             return
 
         self.current_step = 0
@@ -500,7 +506,7 @@ class BoardWidget(CardWidget):
         self.setCurrentStep(len(self.history))
 
     def setCurrentStep(self, index):
-        if self.isAIThinking:
+        if self.isAIThinking or self.isMinimaxSearching:
             return
 
         self.current_step = index
@@ -543,7 +549,7 @@ class BoardWidget(CardWidget):
         )
 
     def onLoad(self):
-        if self.isAIThinking:
+        if self.isAIThinking or self.isMinimaxSearching:
             return
 
         path = QFileDialog.getOpenFileName(
@@ -585,8 +591,8 @@ class BoardWidget(CardWidget):
             self.robot = MaxDiffSigmoidTerritory(self.board, K=2, B=2)
         elif text == "Max Percent Sigmoid Territory":
             self.robot = MaxPercentSigmoidTerritory(self.board, K=2, B=2)
-        elif text == "MiniMax":
-            self.robot = MiniMax(self.board)
+        elif text == "Minimax":
+            self.robot = Minimax(self.board)
 
     def onEnableMCTS(self):
         self.aiThread = AIThread(
@@ -596,6 +602,14 @@ class BoardWidget(CardWidget):
         signalBus.modelChanged.connect(self.onRefreshMCTS)
         self.aiThread.searchComplete.connect(self.onSearchComplete)
         self.MCTS_enabled = True
+
+    def onEnableMinimax(self):
+        self.minimaxThread = MinimaxThread(
+            chessboard=self.board,
+            parent=self
+        )
+        self.minimaxThread.searchComplete.connect(self.onMinimaxSearchComplete)
+        self.minimax_enabled = True
 
     def onRefreshMCTS(self):
         if self.isAIThinking:
@@ -614,6 +628,9 @@ class BoardWidget(CardWidget):
         self.aiThread.quit()
         self.aiThread.wait()
         self.aiThread.deleteLater()
+        self.minimaxThread.quit()
+        self.minimaxThread.wait()
+        self.minimaxThread.deleteLater()
         e.accept()
 
     def createGameOverInfoBar(self, title, content, color):
@@ -639,7 +656,6 @@ class BoardWidget(CardWidget):
             return False
 
         self.board.do_action(action)
-
         if change_history:
             self.history = self.history[:self.current_step]
             self.history.append(action)
@@ -673,7 +689,7 @@ class BoardWidget(CardWidget):
         self.onNotFirstMove.emit(self.current_step > 0)
         self.onNotLastMove.emit(self.current_step < len(self.history))
         self.onSaveAvailable.emit(len(self.history) > 0)
-        self.onSkipAvailable.emit(self.robot is not None or self.MCTS_enabled)
+        self.onSkipAvailable.emit(self.robot is not None or self.MCTS_enabled or self.minimax_enabled)
 
     def nnMove(self):
         """ 获取 AI 的动作 """
@@ -692,10 +708,33 @@ class BoardWidget(CardWidget):
         self.isAIThinking = True
         self.aiThread.start()
 
+    def minimaxMove(self):
+        if self.isMinimaxSearching:
+            return
+        self.stateTooltip = StateToolTip(
+            title='Minimax is searching',
+            content='Please wait a moment',
+            parent=self.parent().parent()
+        )
+        self.stateTooltip.move(self.window().width() - self.stateTooltip.width() - 85, 10)
+        self.stateTooltip.raise_()
+        self.stateTooltip.show()
+
+        self.isMinimaxSearching = True
+        self.minimaxThread.start()
+
+
     def onSearchComplete(self, action: int):
         """ AI 思考完成槽函数 """
         self.stateTooltip.setState(True)
         self.isAIThinking = False
+        self.stateTooltip = None
+        self.doAction(action)
+        self.update()
+
+    def onMinimaxSearchComplete(self, action: int):
+        self.stateTooltip.setState(True)
+        self.isMinimaxSearching = False
         self.stateTooltip = None
         self.doAction(action)
         self.update()

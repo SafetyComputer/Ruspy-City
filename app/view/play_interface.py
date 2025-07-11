@@ -108,6 +108,7 @@ class PlayInterface(QWidget):
 
         self.menu.addMenu(submenu)
         self.menu.addAction(Action(MyFluentIcon.CHIP, 'MCTS', triggered=self.onAddMCTSTab))
+        self.menu.addAction(Action(MyFluentIcon.CHIP, 'Minimax', triggered=self.onAddMinimaxTab))
 
         self.tab_bar.addButton.setMenu(self.menu)
         self.tab_bar.addButton.setIconSize(QSize(12, 12))
@@ -202,6 +203,10 @@ class PlayInterface(QWidget):
     def onAddMCTSTab(self):
         self.addTab(MyFluentIcon.CHIP)
         self.board_interface.currentWidget().onEnableMCTS()
+
+    def onAddMinimaxTab(self):
+        self.addTab(MyFluentIcon.CHIP)
+        self.board_interface.currentWidget().onEnableMinimax()
 
     def addTab(self, icon, text=""):
         if not text:

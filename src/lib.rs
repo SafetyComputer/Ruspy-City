@@ -354,6 +354,10 @@ impl PyGame {
         };
         pos_to_action((mv.destination.x - start.x, mv.destination.y - start.y)) * 4 + dir
     }
+
+    fn clone(&self) -> PyGame {
+        PyGame { inner: self.inner.clone() }
+    }
 }
 
 #[pymodule]

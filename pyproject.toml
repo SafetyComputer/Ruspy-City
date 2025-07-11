@@ -1,11 +1,12 @@
 [project]
 name = "ruspy-city"
-version = "1.1.1"
+version = "1.2.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "matplotlib>=3.10.3",
+    "maturin>=1.9.1",
     "numpy>=2.2.6",
     "pyinstaller>=6.14.2",
     "pyside6>=6.9.1",

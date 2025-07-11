@@ -45,7 +45,7 @@ class Random(Robot):
     def play(self):
         return random.choice(self.board.available_actions)
 
-class MiniMax(Robot):
+class Minimax(Robot):
     def __init__(self, board: ChessBoard, name=""):
         super().__init__(board, name)
         if not self.name:

@@ -9,3 +9,4 @@ if __name__ == "__main__":
     result = game.get_available_actions()
     result.sort()
     print(result)
+    print(dir(game))
