@@ -339,20 +339,22 @@ impl PyGame {
             .collect()
     }
 
-    fn minimax_best_move(&mut self) -> i32 {
-        let start = if self.inner.blue_turn {
-            self.inner.blue_position
-        } else {
-            self.inner.green_position
-        };
-        let mv = self.inner.iterative_deepening_minimax(2).mv;
-        let dir = match mv.place_wall {
-            Direction::Up => 0,
-            Direction::Left => 1,
-            Direction::Down => 2,
-            Direction::Right => 3,
-        };
-        pos_to_action((mv.destination.x - start.x, mv.destination.y - start.y)) * 4 + dir
+    fn minimax_best_move(&mut self, py: Python) -> i32 {
+        py.allow_threads(|| {
+            let start = if self.inner.blue_turn {
+                self.inner.blue_position
+            } else {
+                self.inner.green_position
+            };
+            let mv = self.inner.iterative_deepening_minimax(2).mv;
+            let dir = match mv.place_wall {
+                Direction::Up => 0,
+                Direction::Left => 1,
+                Direction::Down => 2,
+                Direction::Right => 3,
+            };
+            pos_to_action((mv.destination.x - start.x, mv.destination.y - start.y)) * 4 + dir
+        })
     }
 
     fn clone(&self) -> PyGame {
