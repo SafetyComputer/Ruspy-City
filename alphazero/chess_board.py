@@ -37,12 +37,15 @@ class ChessBoard:
         (3, 0): 24
     }
 
-    def __init__(self, board_len=7, n_feature_planes=5):
+    def __init__(self, board_len=7, n_feature_planes=5, game=None):
         """
         :param board_len: 棋盘边长
         :param n_feature_planes: 特征平面数
         """
-        self.inner = Game(board_len, board_len)
+        if game is None:
+            self.inner = Game(board_len, board_len)
+        else:
+            self.inner = game
         self.board_len = board_len
         self.n_feature_planes = n_feature_planes
 
@@ -64,7 +67,8 @@ class ChessBoard:
 
     def copy(self) -> 'ChessBoard':
         """ 复制棋盘 """
-        return deepcopy(self)
+        game = self.inner.clone()
+        return ChessBoard(self.board_len, self.n_feature_planes, game)
 
     def get_player_pos(self) -> List[tuple[int, int]]:
         """ 获取玩家位置 """
